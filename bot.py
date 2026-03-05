@@ -1,4 +1,4 @@
-import logging
+﻿import logging
 import time
 from collections import defaultdict, deque
 from functools import wraps
@@ -29,6 +29,7 @@ from database import (
     get_user,
     get_user_rank,
     get_user_summary,
+    get_setting,
     has_approved,
     has_pending,
     init_db,
@@ -36,6 +37,7 @@ from database import (
     list_users,
     register_user,
     review_submission,
+    set_setting,
     unban_user,
 )
 
@@ -51,6 +53,32 @@ _user_notice_ts: dict[int, float] = {}
 
 ADMIN_USERS_PAGE_SIZE = 10
 ADMIN_TASKS_PAGE_SIZE = 8
+
+EDITABLE_TEXTS = {
+    "welcome_text": {
+        "label": "РџСЂРёРІС–С‚Р°РЅРЅСЏ /start",
+        "default": (
+            "рџ‘‹ РџСЂРёРІС–С‚, *{first_name}*!\n\n"
+            "Р’РёРєРѕРЅСѓР№ Р·Р°РІРґР°РЅРЅСЏ -> РѕС‚СЂРёРјСѓР№ XP -> РїРѕС‚СЂР°РїР»СЏР№ Сѓ С‚РѕРї!\n\n"
+            "рџ“‹ /tasks вЂ” СЃРїРёСЃРѕРє Р·Р°РІРґР°РЅСЊ\n"
+            "в­ђ /xp вЂ” РјС–Р№ РїСЂРѕС„С–Р»СЊ\n"
+            "рџЏ† /leaderboard вЂ” С‚Р°Р±Р»РёС†СЏ Р»С–РґРµСЂС–РІ\n"
+            "вќ“ /help вЂ” СЏРє С†Рµ РїСЂР°С†СЋС”"
+        ),
+    },
+    "help_text": {
+        "label": "Р”РѕРІС–РґРєР° /help",
+        "default": (
+            "рџ“– *РЇРє С†Рµ РїСЂР°С†СЋС”:*\n\n"
+            "1) РџРµСЂРµРіР»СЏРЅСЊ Р·Р°РІРґР°РЅРЅСЏ: /tasks\n"
+            "2) Р’РёРєРѕРЅР°Р№ Р·Р°РІРґР°РЅРЅСЏ\n"
+            "3) РќР°С‚РёСЃРЅРё В«рџ“¤ Р—РґР°С‚Рё Р·Р°РІРґР°РЅРЅСЏВ»\n"
+            "4) РќР°РґС–С€Р»Рё РїС–РґС‚РІРµСЂРґР¶РµРЅРЅСЏ (СЃРєСЂС–РЅС€РѕС‚ Р°Р±Рѕ С‚РµРєСЃС‚)\n"
+            "5) РђРґРјС–РЅ РїРµСЂРµРІС–СЂРёС‚СЊ С– РЅР°СЂР°С…СѓС” XP\n\n"
+            "Р©РѕР± СЃРєР°СЃСѓРІР°С‚Рё Р·РґР°С‡Сѓ: /cancel"
+        ),
+    },
+}
 
 
 def _is_admin(update: Update) -> bool:
@@ -91,7 +119,7 @@ async def _send_rate_limit_notice(update: Update) -> None:
         return
 
     _user_notice_ts[user.id] = now
-    text = "Забагато запитів. Спробуй ще раз через кілька секунд."
+    text = "Р—Р°Р±Р°РіР°С‚Рѕ Р·Р°РїРёС‚С–РІ. РЎРїСЂРѕР±СѓР№ С‰Рµ СЂР°Р· С‡РµСЂРµР· РєС–Р»СЊРєР° СЃРµРєСѓРЅРґ."
 
     if update.callback_query:
         try:
@@ -104,7 +132,7 @@ async def _send_rate_limit_notice(update: Update) -> None:
 
 
 async def _send_ban_notice(update: Update) -> None:
-    text = "Доступ до бота обмежено. Напиши адміну."
+    text = "Р”РѕСЃС‚СѓРї РґРѕ Р±РѕС‚Р° РѕР±РјРµР¶РµРЅРѕ. РќР°РїРёС€Рё Р°РґРјС–РЅСѓ."
     if update.callback_query:
         try:
             await update.callback_query.answer(text, show_alert=True)
@@ -141,7 +169,7 @@ def admin_only(func):
     @wraps(func)
     async def wrapper(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not _is_admin(update):
-            await _reply(update, "❌ Тільки для адмінів!")
+            await _reply(update, "вќЊ РўС–Р»СЊРєРё РґР»СЏ Р°РґРјС–РЅС–РІ!")
             return
         return await func(update, ctx)
 
@@ -151,11 +179,12 @@ def admin_only(func):
 def _admin_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("➕ Додати завдання", callback_data="a:add")],
-            [InlineKeyboardButton("🗑 Видалити завдання", callback_data="a:dellist:0")],
-            [InlineKeyboardButton("👥 Користувачі", callback_data="a:users:0")],
-            [InlineKeyboardButton("🎁 Нарахувати XP", callback_data="a:xp")],
-            [InlineKeyboardButton("📊 Статистика", callback_data="a:stats")],
+            [InlineKeyboardButton("вћ• Р”РѕРґР°С‚Рё Р·Р°РІРґР°РЅРЅСЏ", callback_data="a:add")],
+            [InlineKeyboardButton("рџ—‘ Р’РёРґР°Р»РёС‚Рё Р·Р°РІРґР°РЅРЅСЏ", callback_data="a:dellist:0")],
+            [InlineKeyboardButton("рџ‘Ґ РљРѕСЂРёСЃС‚СѓРІР°С‡С–", callback_data="a:users:0")],
+            [InlineKeyboardButton("рџЋЃ РќР°СЂР°С…СѓРІР°С‚Рё XP", callback_data="a:xp")],
+            [InlineKeyboardButton("рџ“Љ РЎС‚Р°С‚РёСЃС‚РёРєР°", callback_data="a:stats")],
+            [InlineKeyboardButton("🧩 Редагувати інфо бота", callback_data="be:menu")],
         ]
     )
 
@@ -166,6 +195,27 @@ def _display_name(row) -> str:
     if row["first_name"]:
         return row["first_name"]
     return f"User{row['user_id']}"
+
+
+def _get_text_setting(key: str, **fmt) -> str:
+    meta = EDITABLE_TEXTS[key]
+    raw = get_setting(key, meta["default"])
+    try:
+        return raw.format(**fmt)
+    except Exception:
+        return raw
+
+
+def _bot_infoedit_markup() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("вњЌпёЏ Р—РјС–РЅРёС‚Рё РїСЂРёРІС–С‚Р°РЅРЅСЏ /start", callback_data="be:edit:welcome_text")],
+            [InlineKeyboardButton("вњЌпёЏ Р—РјС–РЅРёС‚Рё РґРѕРІС–РґРєСѓ /help", callback_data="be:edit:help_text")],
+            [InlineKeyboardButton("рџ‘ЃпёЏ РџРµСЂРµРіР»СЏРЅСѓС‚Рё РїРѕС‚РѕС‡РЅС– С‚РµРєСЃС‚Рё", callback_data="be:preview")],
+            [InlineKeyboardButton("в„№пёЏ Р©Рѕ Р·РјС–РЅСЋС”С‚СЊСЃСЏ С‚С–Р»СЊРєРё С‡РµСЂРµР· BotFather", callback_data="be:limits")],
+            [InlineKeyboardButton("в¬… Р’ Р°РґРјС–РЅ-РјРµРЅСЋ", callback_data="a:menu")],
+        ]
+    )
 
 
 def _wizard(ctx: ContextTypes.DEFAULT_TYPE) -> dict | None:
@@ -199,35 +249,13 @@ async def _cleanup_wizard_prompts(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int) 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user)
-    await _reply(
-        update,
-        (
-            f"👋 Привіт, *{user.first_name}*!\n\n"
-            "Виконуй завдання -> отримуй XP -> потрапляй у топ!\n\n"
-            "📋 /tasks — список завдань\n"
-            "⭐ /xp — мій профіль\n"
-            "🏆 /leaderboard — таблиця лідерів\n"
-            "❓ /help — як це працює"
-        ),
-        parse_mode="Markdown",
-    )
+    text = _get_text_setting("welcome_text", first_name=user.first_name or "друже")
+    await _reply(update, text, parse_mode="Markdown")
 
 
 @rate_limit_user
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await _reply(
-        update,
-        (
-            "📖 *Як це працює:*\n\n"
-            "1) Переглянь завдання: /tasks\n"
-            "2) Виконай завдання\n"
-            "3) Натисни «📤 Здати завдання»\n"
-            "4) Надішли підтвердження (скріншот або текст)\n"
-            "5) Адмін перевірить і нарахує XP\n\n"
-            "Щоб скасувати здачу: /cancel"
-        ),
-        parse_mode="Markdown",
-    )
+    await _reply(update, _get_text_setting("help_text"), parse_mode="Markdown")
 
 
 @rate_limit_user
@@ -237,34 +265,34 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tasks = get_tasks()
 
     if not tasks:
-        await _reply(update, "😕 Наразі завдань немає. Зазирни пізніше!")
+        await _reply(update, "рџ• РќР°СЂР°Р·С– Р·Р°РІРґР°РЅСЊ РЅРµРјР°С”. Р—Р°Р·РёСЂРЅРё РїС–Р·РЅС–С€Рµ!")
         return
 
-    await _reply(update, "📋 *Список завдань:*", parse_mode="Markdown")
+    await _reply(update, "рџ“‹ *РЎРїРёСЃРѕРє Р·Р°РІРґР°РЅСЊ:*", parse_mode="Markdown")
 
     for task in tasks:
         done = has_approved(user.id, task["id"])
         pending = has_pending(user.id, task["id"])
 
         if done:
-            badge = " ✅"
+            badge = " вњ…"
         elif pending:
-            badge = " ⏳"
+            badge = " вЏі"
         else:
             badge = ""
 
         text = (
-            f"📌 *{task['title']}*{badge}\n"
+            f"рџ“Њ *{task['title']}*{badge}\n"
             f"{task['description']}\n"
-            f"💎 Нагорода: *{task['xp_reward']} XP*"
+            f"рџ’Ћ РќР°РіРѕСЂРѕРґР°: *{task['xp_reward']} XP*"
         )
 
         if done:
-            btn = InlineKeyboardButton("✅ Виконано", callback_data="noop")
+            btn = InlineKeyboardButton("вњ… Р’РёРєРѕРЅР°РЅРѕ", callback_data="noop")
         elif pending:
-            btn = InlineKeyboardButton("⏳ На перевірці", callback_data="noop")
+            btn = InlineKeyboardButton("вЏі РќР° РїРµСЂРµРІС–СЂС†С–", callback_data="noop")
         else:
-            btn = InlineKeyboardButton("📤 Здати завдання", callback_data=f"submit_{task['id']}")
+            btn = InlineKeyboardButton("рџ“¤ Р—РґР°С‚Рё Р·Р°РІРґР°РЅРЅСЏ", callback_data=f"submit_{task['id']}")
 
         await _reply(update, text, reply_markup=InlineKeyboardMarkup([[btn]]), parse_mode="Markdown")
 
@@ -279,9 +307,9 @@ async def cmd_xp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _reply(
         update,
         (
-            f"⭐ *Профіль {user.first_name}*\n\n"
-            f"💎 XP: *{db_user['xp']}*\n"
-            f"🏆 Місце: *#{rank}* з {total}"
+            f"в­ђ *РџСЂРѕС„С–Р»СЊ {user.first_name}*\n\n"
+            f"рџ’Ћ XP: *{db_user['xp']}*\n"
+            f"рџЏ† РњС–СЃС†Рµ: *#{rank}* Р· {total}"
         ),
         parse_mode="Markdown",
     )
@@ -292,14 +320,14 @@ async def cmd_leaderboard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     top = get_leaderboard()
 
     if not top:
-        await _reply(update, "😕 Таблиця порожня. Будь першим!")
+        await _reply(update, "рџ• РўР°Р±Р»РёС†СЏ РїРѕСЂРѕР¶РЅСЏ. Р‘СѓРґСЊ РїРµСЂС€РёРј!")
         return
 
-    medals = ["🥇", "🥈", "🥉"]
-    lines = ["🏆 *Таблиця лідерів*\n"]
+    medals = ["рџҐ‡", "рџҐ€", "рџҐ‰"]
+    lines = ["рџЏ† *РўР°Р±Р»РёС†СЏ Р»С–РґРµСЂС–РІ*\n"]
     for i, user in enumerate(top):
         icon = medals[i] if i < 3 else f"{i + 1}."
-        lines.append(f"{icon} {_display_name(user)} — *{user['xp']} XP*")
+        lines.append(f"{icon} {_display_name(user)} вЂ” *{user['xp']} XP*")
 
     await _reply(update, "\n".join(lines), parse_mode="Markdown")
 
@@ -310,16 +338,48 @@ async def cmd_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     had_wizard = bool(ctx.user_data.pop("admin_wizard", None))
 
     if had_submission or had_wizard:
-        await _reply(update, "❌ Поточну дію скасовано.")
+        await _reply(update, "вќЊ РџРѕС‚РѕС‡РЅСѓ РґС–СЋ СЃРєР°СЃРѕРІР°РЅРѕ.")
     else:
-        await _reply(update, "Немає активної дії для скасування.")
+        await _reply(update, "РќРµРјР°С” Р°РєС‚РёРІРЅРѕС— РґС–С— РґР»СЏ СЃРєР°СЃСѓРІР°РЅРЅСЏ.")
 
 
 @admin_only
 @rate_limit_user
 async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _clear_wizard(ctx)
-    await _reply(update, "🛠 *Адмін-панель*", reply_markup=_admin_menu_markup(), parse_mode="Markdown")
+    await _reply(update, "рџ›  *РђРґРјС–РЅ-РїР°РЅРµР»СЊ*", reply_markup=_admin_menu_markup(), parse_mode="Markdown")
+
+
+@admin_only
+@rate_limit_user
+async def cmd_bot_infoedit(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    _clear_wizard(ctx)
+    await _reply(update, "🧩 *Редактор інформації бота*", reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
+
+
+@admin_only
+@rate_limit_user
+async def cmd_help_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    await _reply(
+        update,
+        (
+            "🛠 *Admin Help*\n\n"
+            "`/admin` — відкрити адмін-меню (кнопки).\n"
+            "`/bot_infoedit` — змінити тексти /start і /help.\n"
+            "`/help_admin` — ця довідка.\n\n"
+            "*Legacy команди:*\n"
+            "`/addtask <XP> <назва> | <опис>` — додати задачу.\n"
+            "`/deltask <task_id>` — деактивувати задачу.\n"
+            "`/givexp <user_id> <amount>` — нарахувати/зняти XP.\n"
+            "`/stats` — загальна статистика.\n"
+            "`/cancel` — скасувати активний wizard.\n\n"
+            "*В адмін-меню також є:*\n"
+            "• Керування користувачами (перегляд, ban/unban)\n"
+            "• Покрокове додавання задач\n"
+            "• Покрокове нарахування XP"
+        ),
+        parse_mode="Markdown",
+    )
 
 
 @admin_only
@@ -337,13 +397,13 @@ async def cmd_addtask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         await _reply(
             update,
-            "❌ Формат: /addtask <XP> <назва> | <опис>\n"
-            "Приклад: /addtask 50 Написати відгук | Напиши відгук про бот",
+            "вќЊ Р¤РѕСЂРјР°С‚: /addtask <XP> <РЅР°Р·РІР°> | <РѕРїРёСЃ>\n"
+            "РџСЂРёРєР»Р°Рґ: /addtask 50 РќР°РїРёСЃР°С‚Рё РІС–РґРіСѓРє | РќР°РїРёС€Рё РІС–РґРіСѓРє РїСЂРѕ Р±РѕС‚",
         )
         return
 
     task_id = add_task(title, description, xp)
-    await _reply(update, f"✅ Завдання #{task_id} додано!\n📌 {title}\n💎 {xp} XP")
+    await _reply(update, f"вњ… Р—Р°РІРґР°РЅРЅСЏ #{task_id} РґРѕРґР°РЅРѕ!\nрџ“Њ {title}\nрџ’Ћ {xp} XP")
 
 
 @admin_only
@@ -352,9 +412,9 @@ async def cmd_deltask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         task_id = int(ctx.args[0])
         delete_task(task_id)
-        await _reply(update, f"✅ Завдання #{task_id} деактивовано.")
+        await _reply(update, f"вњ… Р—Р°РІРґР°РЅРЅСЏ #{task_id} РґРµР°РєС‚РёРІРѕРІР°РЅРѕ.")
     except (IndexError, ValueError):
-        await _reply(update, "❌ Формат: /deltask <task_id>")
+        await _reply(update, "вќЊ Р¤РѕСЂРјР°С‚: /deltask <task_id>")
 
 
 @admin_only
@@ -364,9 +424,9 @@ async def cmd_givexp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         uid = int(ctx.args[0])
         amount = int(ctx.args[1])
         add_xp(uid, amount)
-        await _reply(update, f"✅ Нараховано {amount} XP -> {uid}")
+        await _reply(update, f"вњ… РќР°СЂР°С…РѕРІР°РЅРѕ {amount} XP -> {uid}")
     except (IndexError, ValueError):
-        await _reply(update, "❌ Формат: /givexp <user_id> <кількість>")
+        await _reply(update, "вќЊ Р¤РѕСЂРјР°С‚: /givexp <user_id> <РєС–Р»СЊРєС–СЃС‚СЊ>")
 
 
 @admin_only
@@ -376,11 +436,11 @@ async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _reply(
         update,
         (
-            "📊 *Статистика*\n\n"
-            f"👥 Користувачів: {users}\n"
-            f"📋 Активних завдань: {tasks}\n"
-            f"⏳ На перевірці: {pending}\n"
-            f"✅ Схвалено: {approved}"
+            "рџ“Љ *РЎС‚Р°С‚РёСЃС‚РёРєР°*\n\n"
+            f"рџ‘Ґ РљРѕСЂРёСЃС‚СѓРІР°С‡С–РІ: {users}\n"
+            f"рџ“‹ РђРєС‚РёРІРЅРёС… Р·Р°РІРґР°РЅСЊ: {tasks}\n"
+            f"вЏі РќР° РїРµСЂРµРІС–СЂС†С–: {pending}\n"
+            f"вњ… РЎС…РІР°Р»РµРЅРѕ: {approved}"
         ),
         parse_mode="Markdown",
     )
@@ -393,15 +453,15 @@ def _render_task_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
     start = page * ADMIN_TASKS_PAGE_SIZE
     chunk = tasks[start : start + ADMIN_TASKS_PAGE_SIZE]
 
-    lines = ["🗑 *Видалення завдань*", "Натисни на завдання для деактивації.", ""]
+    lines = ["рџ—‘ *Р’РёРґР°Р»РµРЅРЅСЏ Р·Р°РІРґР°РЅСЊ*", "РќР°С‚РёСЃРЅРё РЅР° Р·Р°РІРґР°РЅРЅСЏ РґР»СЏ РґРµР°РєС‚РёРІР°С†С–С—.", ""]
     rows = []
 
     for task in chunk:
-        lines.append(f"#{task['id']} — {task['title']} ({task['xp_reward']} XP)")
+        lines.append(f"#{task['id']} вЂ” {task['title']} ({task['xp_reward']} XP)")
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"Видалити #{task['id']}",
+                    f"Р’РёРґР°Р»РёС‚Рё #{task['id']}",
                     callback_data=f"a:del:{task['id']}:{page}",
                 )
             ]
@@ -409,12 +469,12 @@ def _render_task_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
 
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀ Prev", callback_data=f"a:dellist:{page - 1}"))
+        nav.append(InlineKeyboardButton("в—Ђ Prev", callback_data=f"a:dellist:{page - 1}"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("Next ▶", callback_data=f"a:dellist:{page + 1}"))
+        nav.append(InlineKeyboardButton("Next в–¶", callback_data=f"a:dellist:{page + 1}"))
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton("⬅ В меню", callback_data="a:menu")])
+    rows.append([InlineKeyboardButton("в¬… Р’ РјРµРЅСЋ", callback_data="a:menu")])
 
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
@@ -425,25 +485,25 @@ def _render_user_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
     page = max(0, min(page, total_pages - 1))
 
     users = list_users(limit=ADMIN_USERS_PAGE_SIZE, offset=page * ADMIN_USERS_PAGE_SIZE)
-    lines = [f"👥 *Користувачі* (сторінка {page + 1}/{total_pages})", ""]
+    lines = [f"рџ‘Ґ *РљРѕСЂРёСЃС‚СѓРІР°С‡С–* (СЃС‚РѕСЂС–РЅРєР° {page + 1}/{total_pages})", ""]
     rows = []
 
     if not users:
-        lines.append("Немає користувачів.")
+        lines.append("РќРµРјР°С” РєРѕСЂРёСЃС‚СѓРІР°С‡С–РІ.")
     else:
         for user in users:
-            ban_mark = "🚫" if user["is_banned"] else ""
+            ban_mark = "рџљ«" if user["is_banned"] else ""
             lines.append(f"`{user['user_id']}` | {_display_name(user)} | {user['xp']} XP {ban_mark}")
-            rows.append([InlineKeyboardButton(f"Деталі {user['user_id']}", callback_data=f"a:ud:{user['user_id']}:{page}")])
+            rows.append([InlineKeyboardButton(f"Р”РµС‚Р°Р»С– {user['user_id']}", callback_data=f"a:ud:{user['user_id']}:{page}")])
 
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀ Prev", callback_data=f"a:users:{page - 1}"))
+        nav.append(InlineKeyboardButton("в—Ђ Prev", callback_data=f"a:users:{page - 1}"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("Next ▶", callback_data=f"a:users:{page + 1}"))
+        nav.append(InlineKeyboardButton("Next в–¶", callback_data=f"a:users:{page + 1}"))
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton("⬅ В меню", callback_data="a:menu")])
+    rows.append([InlineKeyboardButton("в¬… Р’ РјРµРЅСЋ", callback_data="a:menu")])
 
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
@@ -455,7 +515,7 @@ def _render_user_detail(user_id: int, page: int) -> tuple[str, InlineKeyboardMar
 
     status = "banned" if user["is_banned"] else "active"
     lines = [
-        "👤 *Картка користувача*",
+        "рџ‘¤ *РљР°СЂС‚РєР° РєРѕСЂРёСЃС‚СѓРІР°С‡Р°*",
         f"ID: `{user['user_id']}`",
         f"Username: {_display_name(user)}",
         f"Name: {user['first_name'] or '-'}",
@@ -465,12 +525,12 @@ def _render_user_detail(user_id: int, page: int) -> tuple[str, InlineKeyboardMar
     ]
 
     if user["is_banned"]:
-        action_btn = InlineKeyboardButton("✅ Unban", callback_data=f"a:unban:{user['user_id']}:{page}")
+        action_btn = InlineKeyboardButton("вњ… Unban", callback_data=f"a:unban:{user['user_id']}:{page}")
     else:
-        action_btn = InlineKeyboardButton("🚫 Ban", callback_data=f"a:ban:{user['user_id']}:{page}")
+        action_btn = InlineKeyboardButton("рџљ« Ban", callback_data=f"a:ban:{user['user_id']}:{page}")
 
     markup = InlineKeyboardMarkup(
-        [[action_btn], [InlineKeyboardButton("⬅ До списку", callback_data=f"a:users:{page}")]]
+        [[action_btn], [InlineKeyboardButton("в¬… Р”Рѕ СЃРїРёСЃРєСѓ", callback_data=f"a:users:{page}")]]
     )
     return "\n".join(lines), markup
 
@@ -484,7 +544,7 @@ async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wi
             "payload": {},
             "bot_prompt_ids": [],
         }
-        await _wizard_prompt(ctx, chat_id, "📝 Введи *назву* завдання:")
+        await _wizard_prompt(ctx, chat_id, "рџ“ќ Р’РІРµРґРё *РЅР°Р·РІСѓ* Р·Р°РІРґР°РЅРЅСЏ:")
         return
 
     if wizard_type == "give_xp":
@@ -494,7 +554,26 @@ async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wi
             "payload": {},
             "bot_prompt_ids": [],
         }
-        await _wizard_prompt(ctx, chat_id, "🎯 Введи *user_id* користувача:")
+        await _wizard_prompt(ctx, chat_id, "рџЋЇ Р’РІРµРґРё *user_id* РєРѕСЂРёСЃС‚СѓРІР°С‡Р°:")
+        return
+
+    if wizard_type.startswith("edit_text:"):
+        setting_key = wizard_type.split(":", 1)[1]
+        meta = EDITABLE_TEXTS.get(setting_key)
+        if not meta:
+            return
+        ctx.user_data["admin_wizard"] = {
+            "type": "edit_text",
+            "step": "value",
+            "payload": {"key": setting_key},
+            "bot_prompt_ids": [],
+        }
+        await _wizard_prompt(
+            ctx,
+            chat_id,
+            f"✍️ Введи новий текст для *{meta['label']}*.\n\n"
+            "Можна кілька абзаців. Щоб скасувати — /cancel",
+        )
 
 
 @admin_only
@@ -504,12 +583,12 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
 
     if data == "a:menu":
         _clear_wizard(ctx)
-        await query.edit_message_text("🛠 *Адмін-панель*", reply_markup=_admin_menu_markup(), parse_mode="Markdown")
+        await query.edit_message_text("рџ›  *РђРґРјС–РЅ-РїР°РЅРµР»СЊ*", reply_markup=_admin_menu_markup(), parse_mode="Markdown")
         return
 
     if data == "a:add":
         await _start_admin_wizard(update, ctx, "add_task")
-        await query.answer("Майстер додавання запущено")
+        await query.answer("РњР°Р№СЃС‚РµСЂ РґРѕРґР°РІР°РЅРЅСЏ Р·Р°РїСѓС‰РµРЅРѕ")
         return
 
     if data.startswith("a:dellist:"):
@@ -522,7 +601,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         _, _, task_id_str, page_str = data.split(":")
         delete_task(int(task_id_str))
         text, markup = _render_task_page(int(page_str))
-        await query.edit_message_text(text=f"✅ Завдання #{task_id_str} деактивовано.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        await query.edit_message_text(text=f"вњ… Р—Р°РІРґР°РЅРЅСЏ #{task_id_str} РґРµР°РєС‚РёРІРѕРІР°РЅРѕ.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:users:"):
@@ -535,7 +614,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         _, _, user_id_str, page_str = data.split(":")
         text, markup = _render_user_detail(int(user_id_str), int(page_str))
         if not text:
-            await query.answer("Користувача не знайдено", show_alert=True)
+            await query.answer("РљРѕСЂРёСЃС‚СѓРІР°С‡Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ", show_alert=True)
             return
         await query.edit_message_text(text=text, reply_markup=markup, parse_mode="Markdown")
         return
@@ -543,44 +622,89 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     if data.startswith("a:ban:"):
         _, _, user_id_str, page_str = data.split(":")
         if int(user_id_str) == query.from_user.id:
-            await query.answer("Не можна забанити самого себе.", show_alert=True)
+            await query.answer("РќРµ РјРѕР¶РЅР° Р·Р°Р±Р°РЅРёС‚Рё СЃР°РјРѕРіРѕ СЃРµР±Рµ.", show_alert=True)
             return
         ok = ban_user(int(user_id_str))
         if not ok:
-            await query.answer("Користувача не знайдено", show_alert=True)
+            await query.answer("РљРѕСЂРёСЃС‚СѓРІР°С‡Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ", show_alert=True)
             return
         text, markup = _render_user_detail(int(user_id_str), int(page_str))
-        await query.edit_message_text(text=f"🚫 Користувача забанено.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        await query.edit_message_text(text=f"рџљ« РљРѕСЂРёСЃС‚СѓРІР°С‡Р° Р·Р°Р±Р°РЅРµРЅРѕ.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:unban:"):
         _, _, user_id_str, page_str = data.split(":")
         ok = unban_user(int(user_id_str))
         if not ok:
-            await query.answer("Користувача не знайдено", show_alert=True)
+            await query.answer("РљРѕСЂРёСЃС‚СѓРІР°С‡Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ", show_alert=True)
             return
         text, markup = _render_user_detail(int(user_id_str), int(page_str))
-        await query.edit_message_text(text=f"✅ Бан знято.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        await query.edit_message_text(text=f"вњ… Р‘Р°РЅ Р·РЅСЏС‚Рѕ.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
     if data == "a:stats":
         users, tasks, pending, approved = get_stats()
         await query.edit_message_text(
             text=(
-                "📊 *Статистика*\n\n"
-                f"👥 Користувачів: {users}\n"
-                f"📋 Активних завдань: {tasks}\n"
-                f"⏳ На перевірці: {pending}\n"
-                f"✅ Схвалено: {approved}"
+                "рџ“Љ *РЎС‚Р°С‚РёСЃС‚РёРєР°*\n\n"
+                f"рџ‘Ґ РљРѕСЂРёСЃС‚СѓРІР°С‡С–РІ: {users}\n"
+                f"рџ“‹ РђРєС‚РёРІРЅРёС… Р·Р°РІРґР°РЅСЊ: {tasks}\n"
+                f"вЏі РќР° РїРµСЂРµРІС–СЂС†С–: {pending}\n"
+                f"вњ… РЎС…РІР°Р»РµРЅРѕ: {approved}"
             ),
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ В меню", callback_data="a:menu")]]),
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("в¬… Р’ РјРµРЅСЋ", callback_data="a:menu")]]),
             parse_mode="Markdown",
         )
         return
 
     if data == "a:xp":
         await _start_admin_wizard(update, ctx, "give_xp")
-        await query.answer("Майстер нарахування XP запущено")
+        await query.answer("РњР°Р№СЃС‚РµСЂ РЅР°СЂР°С…СѓРІР°РЅРЅСЏ XP Р·Р°РїСѓС‰РµРЅРѕ")
+        return
+
+    if data == "be:menu":
+        _clear_wizard(ctx)
+        await query.edit_message_text(
+            text="🧩 *Редактор інформації бота*",
+            reply_markup=_bot_infoedit_markup(),
+            parse_mode="Markdown",
+        )
+        return
+
+    if data.startswith("be:edit:"):
+        setting_key = data.split(":", 2)[2]
+        if setting_key not in EDITABLE_TEXTS:
+            await query.answer("Невідома опція", show_alert=True)
+            return
+        await _start_admin_wizard(update, ctx, f"edit_text:{setting_key}")
+        await query.answer("Режим редагування увімкнено")
+        return
+
+    if data == "be:preview":
+        welcome_preview = _get_text_setting("welcome_text", first_name="Ім'я")
+        help_preview = _get_text_setting("help_text")
+        text = (
+            "*Поточні тексти*\n\n"
+            "*/start:*\n"
+            f"{welcome_preview}\n\n"
+            "*/help:*\n"
+            f"{help_preview}"
+        )
+        await query.edit_message_text(text=text, reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
+        return
+
+    if data == "be:limits":
+        text = (
+            "*Через це меню можна змінити:*\n"
+            "• текст /start\n"
+            "• текст /help\n\n"
+            "*Тільки через @BotFather:*\n"
+            "• фото бота\n"
+            "• username та ім'я бота\n"
+            "• about/description у профілі бота\n"
+            "• токен бота"
+        )
+        await query.edit_message_text(text=text, reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
         return
 
 
@@ -593,7 +717,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data == "noop":
         return
 
-    if data.startswith("a:"):
+    if data.startswith("a:") or data.startswith("be:"):
         await _handle_admin_callback(update, ctx)
         return
 
@@ -603,10 +727,10 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         register_user(user)
 
         if has_approved(user.id, task_id):
-            await query.answer("✅ Ти вже виконав це завдання!", show_alert=True)
+            await query.answer("вњ… РўРё РІР¶Рµ РІРёРєРѕРЅР°РІ С†Рµ Р·Р°РІРґР°РЅРЅСЏ!", show_alert=True)
             return
         if has_pending(user.id, task_id):
-            await query.answer("⏳ Твоя відповідь вже на перевірці!", show_alert=True)
+            await query.answer("вЏі РўРІРѕСЏ РІС–РґРїРѕРІС–РґСЊ РІР¶Рµ РЅР° РїРµСЂРµРІС–СЂС†С–!", show_alert=True)
             return
 
         task = get_task(task_id)
@@ -614,11 +738,11 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         await query.message.reply_text(
             (
-                f"📤 *Здача: {task['title']}*\n\n"
-                "Надішли підтвердження виконання:\n"
-                "• 📸 Скріншот\n"
-                "• 📝 Або текстовий опис\n\n"
-                "_Щоб скасувати — /cancel_"
+                f"рџ“¤ *Р—РґР°С‡Р°: {task['title']}*\n\n"
+                "РќР°РґС–С€Р»Рё РїС–РґС‚РІРµСЂРґР¶РµРЅРЅСЏ РІРёРєРѕРЅР°РЅРЅСЏ:\n"
+                "вЂў рџ“ё РЎРєСЂС–РЅС€РѕС‚\n"
+                "вЂў рџ“ќ РђР±Рѕ С‚РµРєСЃС‚РѕРІРёР№ РѕРїРёСЃ\n\n"
+                "_Р©РѕР± СЃРєР°СЃСѓРІР°С‚Рё вЂ” /cancel_"
             ),
             parse_mode="Markdown",
         )
@@ -626,7 +750,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("approve_") or data.startswith("reject_"):
         if query.from_user.id not in ADMIN_IDS:
-            await query.answer("❌ Тільки для адмінів!", show_alert=True)
+            await query.answer("вќЊ РўС–Р»СЊРєРё РґР»СЏ Р°РґРјС–РЅС–РІ!", show_alert=True)
             return
 
         action, sub_id_str = data.split("_", 1)
@@ -634,10 +758,10 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         sub = get_submission(sub_id)
 
         if not sub:
-            await query.answer("❌ Заявку не знайдено.", show_alert=True)
+            await query.answer("вќЊ Р—Р°СЏРІРєСѓ РЅРµ Р·РЅР°Р№РґРµРЅРѕ.", show_alert=True)
             return
         if sub["status"] != "pending":
-            await query.answer("⚠️ Вже оброблено.", show_alert=True)
+            await query.answer("вљ пёЏ Р’Р¶Рµ РѕР±СЂРѕР±Р»РµРЅРѕ.", show_alert=True)
             return
 
         new_status = "approved" if action == "approve" else "rejected"
@@ -648,19 +772,19 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         if action == "approve":
             add_xp(sub["user_id"], task["xp_reward"])
-            result_icon = "✅ Схвалено"
+            result_icon = "вњ… РЎС…РІР°Р»РµРЅРѕ"
             user_msg = (
-                f"🎉 *Завдання підтверджено!*\n\n"
-                f"✅ «{task['title']}» — зараховано!\n"
-                f"💎 +{task['xp_reward']} XP нараховано!\n\n"
-                f"Переглянь профіль: /xp"
+                f"рџЋ‰ *Р—Р°РІРґР°РЅРЅСЏ РїС–РґС‚РІРµСЂРґР¶РµРЅРѕ!*\n\n"
+                f"вњ… В«{task['title']}В» вЂ” Р·Р°СЂР°С…РѕРІР°РЅРѕ!\n"
+                f"рџ’Ћ +{task['xp_reward']} XP РЅР°СЂР°С…РѕРІР°РЅРѕ!\n\n"
+                f"РџРµСЂРµРіР»СЏРЅСЊ РїСЂРѕС„С–Р»СЊ: /xp"
             )
         else:
-            result_icon = "❌ Відхилено"
+            result_icon = "вќЊ Р’С–РґС…РёР»РµРЅРѕ"
             user_msg = (
-                f"❌ *Завдання не прийнято*\n\n"
-                f"«{task['title']}» — відхилено.\n"
-                f"Спробуй ще раз! /tasks"
+                f"вќЊ *Р—Р°РІРґР°РЅРЅСЏ РЅРµ РїСЂРёР№РЅСЏС‚Рѕ*\n\n"
+                f"В«{task['title']}В» вЂ” РІС–РґС…РёР»РµРЅРѕ.\n"
+                f"РЎРїСЂРѕР±СѓР№ С‰Рµ СЂР°Р·! /tasks"
             )
 
         try:
@@ -668,7 +792,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
 
-        suffix = f"\n\n{result_icon} адміном {admin_tag}"
+        suffix = f"\n\n{result_icon} Р°РґРјС–РЅРѕРј {admin_tag}"
         try:
             if query.message.caption:
                 await query.edit_message_caption(
@@ -695,7 +819,7 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     task = get_task(task_id)
 
     if not task:
-        await _reply(update, "❌ Завдання не знайдено. /tasks")
+        await _reply(update, "вќЊ Р—Р°РІРґР°РЅРЅСЏ РЅРµ Р·РЅР°Р№РґРµРЅРѕ. /tasks")
         ctx.user_data.pop("submitting_task_id", None)
         return
 
@@ -708,7 +832,7 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         proof_file_id = update.message.document.file_id
 
     if not proof_text and not proof_file_id:
-        await _reply(update, "❌ Надішли текст або зображення.")
+        await _reply(update, "вќЊ РќР°РґС–С€Р»Рё С‚РµРєСЃС‚ Р°Р±Рѕ Р·РѕР±СЂР°Р¶РµРЅРЅСЏ.")
         return
 
     sub_id = add_submission(user.id, task_id, proof_text, proof_file_id)
@@ -717,26 +841,26 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _reply(
         update,
         (
-            f"✅ *Здано на перевірку!*\n\n"
-            f"«{task['title']}» — адмін перевірить найближчим часом. ⏳"
+            f"вњ… *Р—РґР°РЅРѕ РЅР° РїРµСЂРµРІС–СЂРєСѓ!*\n\n"
+            f"В«{task['title']}В» вЂ” Р°РґРјС–РЅ РїРµСЂРµРІС–СЂРёС‚СЊ РЅР°Р№Р±Р»РёР¶С‡РёРј С‡Р°СЃРѕРј. вЏі"
         ),
         parse_mode="Markdown",
     )
 
     user_tag = f"@{user.username}" if user.username else user.first_name
     admin_text = (
-        f"🔔 *Нова заявка #{sub_id}*\n\n"
-        f"👤 Від: {user_tag} (ID: `{user.id}`)\n"
-        f"📌 Завдання: *{task['title']}*\n"
-        f"💎 XP: *{task['xp_reward']}*"
+        f"рџ”” *РќРѕРІР° Р·Р°СЏРІРєР° #{sub_id}*\n\n"
+        f"рџ‘¤ Р’С–Рґ: {user_tag} (ID: `{user.id}`)\n"
+        f"рџ“Њ Р—Р°РІРґР°РЅРЅСЏ: *{task['title']}*\n"
+        f"рџ’Ћ XP: *{task['xp_reward']}*"
     )
     if proof_text:
-        admin_text += f"\n💬 Текст:\n{proof_text[:300]}"
+        admin_text += f"\nрџ’¬ РўРµРєСЃС‚:\n{proof_text[:300]}"
 
     markup = InlineKeyboardMarkup(
         [[
-            InlineKeyboardButton("✅ Схвалити", callback_data=f"approve_{sub_id}"),
-            InlineKeyboardButton("❌ Відхилити", callback_data=f"reject_{sub_id}"),
+            InlineKeyboardButton("вњ… РЎС…РІР°Р»РёС‚Рё", callback_data=f"approve_{sub_id}"),
+            InlineKeyboardButton("вќЊ Р’С–РґС…РёР»РёС‚Рё", callback_data=f"reject_{sub_id}"),
         ]]
     )
 
@@ -758,7 +882,7 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode="Markdown",
                 )
         except Exception as exc:
-            logger.error("Не вдалося надіслати адміну %s: %s", admin_id, exc)
+            logger.error("РќРµ РІРґР°Р»РѕСЃСЏ РЅР°РґС–СЃР»Р°С‚Рё Р°РґРјС–РЅСѓ %s: %s", admin_id, exc)
 
 
 @rate_limit_user
@@ -773,17 +897,17 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if wizard["type"] == "add_task":
             if wizard["step"] == "title":
                 if not text:
-                    await _wizard_prompt(ctx, chat_id, "❌ Назва не може бути порожньою. Введи назву:")
+                    await _wizard_prompt(ctx, chat_id, "вќЊ РќР°Р·РІР° РЅРµ РјРѕР¶Рµ Р±СѓС‚Рё РїРѕСЂРѕР¶РЅСЊРѕСЋ. Р’РІРµРґРё РЅР°Р·РІСѓ:")
                     return
                 wizard["payload"]["title"] = text
                 wizard["step"] = "description"
-                await _wizard_prompt(ctx, chat_id, "🧾 Введи *опис* завдання:")
+                await _wizard_prompt(ctx, chat_id, "рџ§ѕ Р’РІРµРґРё *РѕРїРёСЃ* Р·Р°РІРґР°РЅРЅСЏ:")
                 return
 
             if wizard["step"] == "description":
                 wizard["payload"]["description"] = text
                 wizard["step"] = "xp"
-                await _wizard_prompt(ctx, chat_id, "💎 Введи *XP* (ціле число > 0):")
+                await _wizard_prompt(ctx, chat_id, "рџ’Ћ Р’РІРµРґРё *XP* (С†С–Р»Рµ С‡РёСЃР»Рѕ > 0):")
                 return
 
             if wizard["step"] == "xp":
@@ -792,7 +916,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     if xp <= 0:
                         raise ValueError
                 except ValueError:
-                    await _wizard_prompt(ctx, chat_id, "❌ XP має бути цілим числом > 0. Спробуй ще раз:")
+                    await _wizard_prompt(ctx, chat_id, "вќЊ XP РјР°С” Р±СѓС‚Рё С†С–Р»РёРј С‡РёСЃР»РѕРј > 0. РЎРїСЂРѕР±СѓР№ С‰Рµ СЂР°Р·:")
                     return
 
                 task_id = add_task(
@@ -805,10 +929,10 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await _reply(
                     update,
                     (
-                        "✅ *Завдання додано*\n\n"
+                        "вњ… *Р—Р°РІРґР°РЅРЅСЏ РґРѕРґР°РЅРѕ*\n\n"
                         f"ID: `{task_id}`\n"
-                        f"Назва: {wizard['payload']['title']}\n"
-                        f"Опис: {wizard['payload'].get('description', '-')}\n"
+                        f"РќР°Р·РІР°: {wizard['payload']['title']}\n"
+                        f"РћРїРёСЃ: {wizard['payload'].get('description', '-')}\n"
                         f"XP: {xp}"
                     ),
                     parse_mode="Markdown",
@@ -820,17 +944,17 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 try:
                     target_uid = int(text)
                 except ValueError:
-                    await _wizard_prompt(ctx, chat_id, "❌ User ID має бути числом. Спробуй ще раз:")
+                    await _wizard_prompt(ctx, chat_id, "вќЊ User ID РјР°С” Р±СѓС‚Рё С‡РёСЃР»РѕРј. РЎРїСЂРѕР±СѓР№ С‰Рµ СЂР°Р·:")
                     return
 
                 target_user = get_user_summary(target_uid)
                 if not target_user:
-                    await _wizard_prompt(ctx, chat_id, "❌ Користувача не знайдено. Введи інший user_id:")
+                    await _wizard_prompt(ctx, chat_id, "вќЊ РљРѕСЂРёСЃС‚СѓРІР°С‡Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ. Р’РІРµРґРё С–РЅС€РёР№ user_id:")
                     return
 
                 wizard["payload"]["user_id"] = target_uid
                 wizard["step"] = "amount"
-                await _wizard_prompt(ctx, chat_id, "🎁 Введи кількість XP (може бути від'ємна):")
+                await _wizard_prompt(ctx, chat_id, "рџЋЃ Р’РІРµРґРё РєС–Р»СЊРєС–СЃС‚СЊ XP (РјРѕР¶Рµ Р±СѓС‚Рё РІС–Рґ'С”РјРЅР°):")
                 return
 
             if wizard["step"] == "amount":
@@ -839,15 +963,32 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     if amount == 0:
                         raise ValueError
                 except ValueError:
-                    await _wizard_prompt(ctx, chat_id, "❌ XP має бути числом і не 0. Спробуй ще раз:")
+                    await _wizard_prompt(ctx, chat_id, "вќЊ XP РјР°С” Р±СѓС‚Рё С‡РёСЃР»РѕРј С– РЅРµ 0. РЎРїСЂРѕР±СѓР№ С‰Рµ СЂР°Р·:")
                     return
 
                 target_uid = wizard["payload"]["user_id"]
                 add_xp(target_uid, amount)
                 await _cleanup_wizard_prompts(ctx, chat_id)
                 _clear_wizard(ctx)
-                await _reply(update, f"✅ Нараховано {amount} XP -> `{target_uid}`", parse_mode="Markdown")
+                await _reply(update, f"вњ… РќР°СЂР°С…РѕРІР°РЅРѕ {amount} XP -> `{target_uid}`", parse_mode="Markdown")
                 return
+
+        if wizard["type"] == "edit_text":
+            setting_key = wizard["payload"]["key"]
+            if not text:
+                await _wizard_prompt(ctx, chat_id, "❌ Текст не може бути порожнім. Спробуй ще раз:")
+                return
+
+            set_setting(setting_key, text)
+            await _cleanup_wizard_prompts(ctx, chat_id)
+            _clear_wizard(ctx)
+            label = EDITABLE_TEXTS[setting_key]["label"]
+            await _reply(
+                update,
+                f"✅ Оновлено: *{label}*.\nВикористай /bot_infoedit для інших змін.",
+                parse_mode="Markdown",
+            )
+            return
 
     await _process_proof(update, ctx)
 
@@ -869,6 +1010,8 @@ def main():
     app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
     app.add_handler(CommandHandler("admin", cmd_admin))
+    app.add_handler(CommandHandler("bot_infoedit", cmd_bot_infoedit))
+    app.add_handler(CommandHandler("help_admin", cmd_help_admin))
 
     app.add_handler(CommandHandler("addtask", cmd_addtask))
     app.add_handler(CommandHandler("deltask", cmd_deltask))
@@ -880,9 +1023,10 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_proof_media))
 
-    logger.info("🤖 Бот запущено!")
+    logger.info("рџ¤– Р‘РѕС‚ Р·Р°РїСѓС‰РµРЅРѕ!")
     app.run_polling()
 
 
 if __name__ == "__main__":
     main()
+

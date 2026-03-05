@@ -542,6 +542,9 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
 
     if data.startswith("a:ban:"):
         _, _, user_id_str, page_str = data.split(":")
+        if int(user_id_str) == query.from_user.id:
+            await query.answer("Не можна забанити самого себе.", show_alert=True)
+            return
         ok = ban_user(int(user_id_str))
         if not ok:
             await query.answer("Користувача не знайдено", show_alert=True)

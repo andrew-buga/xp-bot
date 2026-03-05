@@ -94,13 +94,66 @@ def _normalize_text(text: str) -> str:
         return text
 
 
+def _btn(text: str, **kwargs) -> InlineKeyboardButton:
+    return _btn(_normalize_text(text), **kwargs)
+
+
+def _normalize_markup(markup):
+    if not markup:
+        return markup
+    if not isinstance(markup, InlineKeyboardMarkup):
+        return markup
+
+    rows = []
+    for row in markup.inline_keyboard:
+        new_row = []
+        for button in row:
+            new_row.append(
+                _btn(
+                    button.text,
+                    callback_data=button.callback_data,
+                    url=button.url,
+                    switch_inline_query=button.switch_inline_query,
+                    switch_inline_query_current_chat=button.switch_inline_query_current_chat,
+                    callback_game=button.callback_game,
+                    pay=button.pay,
+                    login_url=button.login_url,
+                    web_app=button.web_app,
+                )
+            )
+        rows.append(new_row)
+    return InlineKeyboardMarkup(rows)
+
+
 async def _reply(update: Update, text: str, **kwargs):
     text = _normalize_text(text)
+    if "reply_markup" in kwargs:
+        kwargs["reply_markup"] = _normalize_markup(kwargs["reply_markup"])
     if update.effective_message:
         return await update.effective_message.reply_text(text, **kwargs)
     if update.callback_query and update.callback_query.message:
         return await update.callback_query.message.reply_text(text, **kwargs)
     return None
+
+
+async def _query_answer(query, text: str | None = None, **kwargs):
+    if text is None:
+        return await _query_answer(query, **kwargs)
+    return await _query_answer(query, _normalize_text(text), **kwargs)
+
+
+async def _edit_message_text(query, text: str, **kwargs):
+    kwargs["text"] = _normalize_text(text)
+    if "reply_markup" in kwargs:
+        kwargs["reply_markup"] = _normalize_markup(kwargs["reply_markup"])
+    return await _edit_message_text(query, **kwargs)
+
+
+async def _edit_message_caption(query, caption: str, **kwargs):
+    kwargs["caption"] = _normalize_text(caption)
+    if "reply_markup" in kwargs:
+        kwargs["reply_markup"] = _normalize_markup(kwargs["reply_markup"])
+    return await _edit_message_caption(query, **kwargs)
 
 
 def _is_rate_limited(user_id: int) -> bool:
@@ -132,7 +185,7 @@ async def _send_rate_limit_notice(update: Update) -> None:
 
     if update.callback_query:
         try:
-            await update.callback_query.answer(text, show_alert=True)
+            await _query_answer(update.callback_query, text, show_alert=True)
         except Exception:
             pass
         return
@@ -144,7 +197,7 @@ async def _send_ban_notice(update: Update) -> None:
     text = "Р”РѕСЃС‚СѓРї РґРѕ Р±РѕС‚Р° РѕР±РјРµР¶РµРЅРѕ. РќР°РїРёС€Рё Р°РґРјС–РЅСѓ."
     if update.callback_query:
         try:
-            await update.callback_query.answer(text, show_alert=True)
+            await _query_answer(update.callback_query, text, show_alert=True)
         except Exception:
             pass
         return
@@ -188,12 +241,12 @@ def admin_only(func):
 def _admin_menu_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("вћ• Р”РѕРґР°С‚Рё Р·Р°РІРґР°РЅРЅСЏ", callback_data="a:add")],
-            [InlineKeyboardButton("рџ—‘ Р’РёРґР°Р»РёС‚Рё Р·Р°РІРґР°РЅРЅСЏ", callback_data="a:dellist:0")],
-            [InlineKeyboardButton("рџ‘Ґ РљРѕСЂРёСЃС‚СѓРІР°С‡С–", callback_data="a:users:0")],
-            [InlineKeyboardButton("рџЋЃ РќР°СЂР°С…СѓРІР°С‚Рё XP", callback_data="a:xp")],
-            [InlineKeyboardButton("рџ“Љ РЎС‚Р°С‚РёСЃС‚РёРєР°", callback_data="a:stats")],
-            [InlineKeyboardButton("🧩 Редагувати інфо бота", callback_data="be:menu")],
+            [_btn("вћ• Р”РѕРґР°С‚Рё Р·Р°РІРґР°РЅРЅСЏ", callback_data="a:add")],
+            [_btn("рџ—‘ Р’РёРґР°Р»РёС‚Рё Р·Р°РІРґР°РЅРЅСЏ", callback_data="a:dellist:0")],
+            [_btn("рџ‘Ґ РљРѕСЂРёСЃС‚СѓРІР°С‡С–", callback_data="a:users:0")],
+            [_btn("рџЋЃ РќР°СЂР°С…СѓРІР°С‚Рё XP", callback_data="a:xp")],
+            [_btn("рџ“Љ РЎС‚Р°С‚РёСЃС‚РёРєР°", callback_data="a:stats")],
+            [_btn("🧩 Редагувати інфо бота", callback_data="be:menu")],
         ]
     )
 
@@ -218,11 +271,11 @@ def _get_text_setting(key: str, **fmt) -> str:
 def _bot_infoedit_markup() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("вњЌпёЏ Р—РјС–РЅРёС‚Рё РїСЂРёРІС–С‚Р°РЅРЅСЏ /start", callback_data="be:edit:welcome_text")],
-            [InlineKeyboardButton("вњЌпёЏ Р—РјС–РЅРёС‚Рё РґРѕРІС–РґРєСѓ /help", callback_data="be:edit:help_text")],
-            [InlineKeyboardButton("рџ‘ЃпёЏ РџРµСЂРµРіР»СЏРЅСѓС‚Рё РїРѕС‚РѕС‡РЅС– С‚РµРєСЃС‚Рё", callback_data="be:preview")],
-            [InlineKeyboardButton("в„№пёЏ Р©Рѕ Р·РјС–РЅСЋС”С‚СЊСЃСЏ С‚С–Р»СЊРєРё С‡РµСЂРµР· BotFather", callback_data="be:limits")],
-            [InlineKeyboardButton("в¬… Р’ Р°РґРјС–РЅ-РјРµРЅСЋ", callback_data="a:menu")],
+            [_btn("вњЌпёЏ Р—РјС–РЅРёС‚Рё РїСЂРёРІС–С‚Р°РЅРЅСЏ /start", callback_data="be:edit:welcome_text")],
+            [_btn("вњЌпёЏ Р—РјС–РЅРёС‚Рё РґРѕРІС–РґРєСѓ /help", callback_data="be:edit:help_text")],
+            [_btn("рџ‘ЃпёЏ РџРµСЂРµРіР»СЏРЅСѓС‚Рё РїРѕС‚РѕС‡РЅС– С‚РµРєСЃС‚Рё", callback_data="be:preview")],
+            [_btn("в„№пёЏ Р©Рѕ Р·РјС–РЅСЋС”С‚СЊСЃСЏ С‚С–Р»СЊРєРё С‡РµСЂРµР· BotFather", callback_data="be:limits")],
+            [_btn("в¬… Р’ Р°РґРјС–РЅ-РјРµРЅСЋ", callback_data="a:menu")],
         ]
     )
 
@@ -297,11 +350,11 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
         if done:
-            btn = InlineKeyboardButton("вњ… Р’РёРєРѕРЅР°РЅРѕ", callback_data="noop")
+            btn = _btn("вњ… Р’РёРєРѕРЅР°РЅРѕ", callback_data="noop")
         elif pending:
-            btn = InlineKeyboardButton("вЏі РќР° РїРµСЂРµРІС–СЂС†С–", callback_data="noop")
+            btn = _btn("вЏі РќР° РїРµСЂРµРІС–СЂС†С–", callback_data="noop")
         else:
-            btn = InlineKeyboardButton("рџ“¤ Р—РґР°С‚Рё Р·Р°РІРґР°РЅРЅСЏ", callback_data=f"submit_{task['id']}")
+            btn = _btn("рџ“¤ Р—РґР°С‚Рё Р·Р°РІРґР°РЅРЅСЏ", callback_data=f"submit_{task['id']}")
 
         await _reply(update, text, reply_markup=InlineKeyboardMarkup([[btn]]), parse_mode="Markdown")
 
@@ -469,7 +522,7 @@ def _render_task_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
         lines.append(f"#{task['id']} вЂ” {task['title']} ({task['xp_reward']} XP)")
         rows.append(
             [
-                InlineKeyboardButton(
+                _btn(
                     f"Р’РёРґР°Р»РёС‚Рё #{task['id']}",
                     callback_data=f"a:del:{task['id']}:{page}",
                 )
@@ -478,12 +531,12 @@ def _render_task_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
 
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("в—Ђ Prev", callback_data=f"a:dellist:{page - 1}"))
+        nav.append(_btn("в—Ђ Prev", callback_data=f"a:dellist:{page - 1}"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("Next в–¶", callback_data=f"a:dellist:{page + 1}"))
+        nav.append(_btn("Next в–¶", callback_data=f"a:dellist:{page + 1}"))
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton("в¬… Р’ РјРµРЅСЋ", callback_data="a:menu")])
+    rows.append([_btn("в¬… Р’ РјРµРЅСЋ", callback_data="a:menu")])
 
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
@@ -503,16 +556,16 @@ def _render_user_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
         for user in users:
             ban_mark = "рџљ«" if user["is_banned"] else ""
             lines.append(f"`{user['user_id']}` | {_display_name(user)} | {user['xp']} XP {ban_mark}")
-            rows.append([InlineKeyboardButton(f"Р”РµС‚Р°Р»С– {user['user_id']}", callback_data=f"a:ud:{user['user_id']}:{page}")])
+            rows.append([_btn(f"Р”РµС‚Р°Р»С– {user['user_id']}", callback_data=f"a:ud:{user['user_id']}:{page}")])
 
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("в—Ђ Prev", callback_data=f"a:users:{page - 1}"))
+        nav.append(_btn("в—Ђ Prev", callback_data=f"a:users:{page - 1}"))
     if page < total_pages - 1:
-        nav.append(InlineKeyboardButton("Next в–¶", callback_data=f"a:users:{page + 1}"))
+        nav.append(_btn("Next в–¶", callback_data=f"a:users:{page + 1}"))
     if nav:
         rows.append(nav)
-    rows.append([InlineKeyboardButton("в¬… Р’ РјРµРЅСЋ", callback_data="a:menu")])
+    rows.append([_btn("в¬… Р’ РјРµРЅСЋ", callback_data="a:menu")])
 
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
@@ -534,12 +587,12 @@ def _render_user_detail(user_id: int, page: int) -> tuple[str, InlineKeyboardMar
     ]
 
     if user["is_banned"]:
-        action_btn = InlineKeyboardButton("вњ… Unban", callback_data=f"a:unban:{user['user_id']}:{page}")
+        action_btn = _btn("вњ… Unban", callback_data=f"a:unban:{user['user_id']}:{page}")
     else:
-        action_btn = InlineKeyboardButton("рџљ« Ban", callback_data=f"a:ban:{user['user_id']}:{page}")
+        action_btn = _btn("рџљ« Ban", callback_data=f"a:ban:{user['user_id']}:{page}")
 
     markup = InlineKeyboardMarkup(
-        [[action_btn], [InlineKeyboardButton("в¬… Р”Рѕ СЃРїРёСЃРєСѓ", callback_data=f"a:users:{page}")]]
+        [[action_btn], [_btn("в¬… Р”Рѕ СЃРїРёСЃРєСѓ", callback_data=f"a:users:{page}")]]
     )
     return "\n".join(lines), markup
 
@@ -592,68 +645,68 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
 
     if data == "a:menu":
         _clear_wizard(ctx)
-        await query.edit_message_text("рџ›  *РђРґРјС–РЅ-РїР°РЅРµР»СЊ*", reply_markup=_admin_menu_markup(), parse_mode="Markdown")
+        await _edit_message_text(query, "рџ›  *РђРґРјС–РЅ-РїР°РЅРµР»СЊ*", reply_markup=_admin_menu_markup(), parse_mode="Markdown")
         return
 
     if data == "a:add":
         await _start_admin_wizard(update, ctx, "add_task")
-        await query.answer("РњР°Р№СЃС‚РµСЂ РґРѕРґР°РІР°РЅРЅСЏ Р·Р°РїСѓС‰РµРЅРѕ")
+        await _query_answer(query, "РњР°Р№СЃС‚РµСЂ РґРѕРґР°РІР°РЅРЅСЏ Р·Р°РїСѓС‰РµРЅРѕ")
         return
 
     if data.startswith("a:dellist:"):
         page = int(data.split(":")[2])
         text, markup = _render_task_page(page)
-        await query.edit_message_text(text=text, reply_markup=markup, parse_mode="Markdown")
+        await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:del:"):
         _, _, task_id_str, page_str = data.split(":")
         delete_task(int(task_id_str))
         text, markup = _render_task_page(int(page_str))
-        await query.edit_message_text(text=f"вњ… Р—Р°РІРґР°РЅРЅСЏ #{task_id_str} РґРµР°РєС‚РёРІРѕРІР°РЅРѕ.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        await _edit_message_text(query, text=f"вњ… Р—Р°РІРґР°РЅРЅСЏ #{task_id_str} РґРµР°РєС‚РёРІРѕРІР°РЅРѕ.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:users:"):
         page = int(data.split(":")[2])
         text, markup = _render_user_page(page)
-        await query.edit_message_text(text=text, reply_markup=markup, parse_mode="Markdown")
+        await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:ud:"):
         _, _, user_id_str, page_str = data.split(":")
         text, markup = _render_user_detail(int(user_id_str), int(page_str))
         if not text:
-            await query.answer("РљРѕСЂРёСЃС‚СѓРІР°С‡Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ", show_alert=True)
+            await _query_answer(query, "РљРѕСЂРёСЃС‚СѓРІР°С‡Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ", show_alert=True)
             return
-        await query.edit_message_text(text=text, reply_markup=markup, parse_mode="Markdown")
+        await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:ban:"):
         _, _, user_id_str, page_str = data.split(":")
         if int(user_id_str) == query.from_user.id:
-            await query.answer("РќРµ РјРѕР¶РЅР° Р·Р°Р±Р°РЅРёС‚Рё СЃР°РјРѕРіРѕ СЃРµР±Рµ.", show_alert=True)
+            await _query_answer(query, "РќРµ РјРѕР¶РЅР° Р·Р°Р±Р°РЅРёС‚Рё СЃР°РјРѕРіРѕ СЃРµР±Рµ.", show_alert=True)
             return
         ok = ban_user(int(user_id_str))
         if not ok:
-            await query.answer("РљРѕСЂРёСЃС‚СѓРІР°С‡Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ", show_alert=True)
+            await _query_answer(query, "РљРѕСЂРёСЃС‚СѓРІР°С‡Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ", show_alert=True)
             return
         text, markup = _render_user_detail(int(user_id_str), int(page_str))
-        await query.edit_message_text(text=f"рџљ« РљРѕСЂРёСЃС‚СѓРІР°С‡Р° Р·Р°Р±Р°РЅРµРЅРѕ.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        await _edit_message_text(query, text=f"рџљ« РљРѕСЂРёСЃС‚СѓРІР°С‡Р° Р·Р°Р±Р°РЅРµРЅРѕ.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:unban:"):
         _, _, user_id_str, page_str = data.split(":")
         ok = unban_user(int(user_id_str))
         if not ok:
-            await query.answer("РљРѕСЂРёСЃС‚СѓРІР°С‡Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ", show_alert=True)
+            await _query_answer(query, "РљРѕСЂРёСЃС‚СѓРІР°С‡Р° РЅРµ Р·РЅР°Р№РґРµРЅРѕ", show_alert=True)
             return
         text, markup = _render_user_detail(int(user_id_str), int(page_str))
-        await query.edit_message_text(text=f"вњ… Р‘Р°РЅ Р·РЅСЏС‚Рѕ.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        await _edit_message_text(query, text=f"вњ… Р‘Р°РЅ Р·РЅСЏС‚Рѕ.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
     if data == "a:stats":
         users, tasks, pending, approved = get_stats()
-        await query.edit_message_text(
+        await _edit_message_text(query, 
             text=(
                 "рџ“Љ *РЎС‚Р°С‚РёСЃС‚РёРєР°*\n\n"
                 f"рџ‘Ґ РљРѕСЂРёСЃС‚СѓРІР°С‡С–РІ: {users}\n"
@@ -661,19 +714,19 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
                 f"вЏі РќР° РїРµСЂРµРІС–СЂС†С–: {pending}\n"
                 f"вњ… РЎС…РІР°Р»РµРЅРѕ: {approved}"
             ),
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("в¬… Р’ РјРµРЅСЋ", callback_data="a:menu")]]),
+            reply_markup=InlineKeyboardMarkup([[_btn("в¬… Р’ РјРµРЅСЋ", callback_data="a:menu")]]),
             parse_mode="Markdown",
         )
         return
 
     if data == "a:xp":
         await _start_admin_wizard(update, ctx, "give_xp")
-        await query.answer("РњР°Р№СЃС‚РµСЂ РЅР°СЂР°С…СѓРІР°РЅРЅСЏ XP Р·Р°РїСѓС‰РµРЅРѕ")
+        await _query_answer(query, "РњР°Р№СЃС‚РµСЂ РЅР°СЂР°С…СѓРІР°РЅРЅСЏ XP Р·Р°РїСѓС‰РµРЅРѕ")
         return
 
     if data == "be:menu":
         _clear_wizard(ctx)
-        await query.edit_message_text(
+        await _edit_message_text(query, 
             text="🧩 *Редактор інформації бота*",
             reply_markup=_bot_infoedit_markup(),
             parse_mode="Markdown",
@@ -683,10 +736,10 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     if data.startswith("be:edit:"):
         setting_key = data.split(":", 2)[2]
         if setting_key not in EDITABLE_TEXTS:
-            await query.answer("Невідома опція", show_alert=True)
+            await _query_answer(query, "Невідома опція", show_alert=True)
             return
         await _start_admin_wizard(update, ctx, f"edit_text:{setting_key}")
-        await query.answer("Режим редагування увімкнено")
+        await _query_answer(query, "Режим редагування увімкнено")
         return
 
     if data == "be:preview":
@@ -699,7 +752,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             "*/help:*\n"
             f"{help_preview}"
         )
-        await query.edit_message_text(text=text, reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
+        await _edit_message_text(query, text=text, reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
         return
 
     if data == "be:limits":
@@ -713,14 +766,14 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             "• about/description у профілі бота\n"
             "• токен бота"
         )
-        await query.edit_message_text(text=text, reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
+        await _edit_message_text(query, text=text, reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
         return
 
 
 @rate_limit_user
 async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    await _query_answer(query)
     data = query.data
 
     if data == "noop":
@@ -736,10 +789,10 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         register_user(user)
 
         if has_approved(user.id, task_id):
-            await query.answer("вњ… РўРё РІР¶Рµ РІРёРєРѕРЅР°РІ С†Рµ Р·Р°РІРґР°РЅРЅСЏ!", show_alert=True)
+            await _query_answer(query, "вњ… РўРё РІР¶Рµ РІРёРєРѕРЅР°РІ С†Рµ Р·Р°РІРґР°РЅРЅСЏ!", show_alert=True)
             return
         if has_pending(user.id, task_id):
-            await query.answer("вЏі РўРІРѕСЏ РІС–РґРїРѕРІС–РґСЊ РІР¶Рµ РЅР° РїРµСЂРµРІС–СЂС†С–!", show_alert=True)
+            await _query_answer(query, "вЏі РўРІРѕСЏ РІС–РґРїРѕРІС–РґСЊ РІР¶Рµ РЅР° РїРµСЂРµРІС–СЂС†С–!", show_alert=True)
             return
 
         task = get_task(task_id)
@@ -759,7 +812,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("approve_") or data.startswith("reject_"):
         if query.from_user.id not in ADMIN_IDS:
-            await query.answer("вќЊ РўС–Р»СЊРєРё РґР»СЏ Р°РґРјС–РЅС–РІ!", show_alert=True)
+            await _query_answer(query, "вќЊ РўС–Р»СЊРєРё РґР»СЏ Р°РґРјС–РЅС–РІ!", show_alert=True)
             return
 
         action, sub_id_str = data.split("_", 1)
@@ -767,10 +820,10 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         sub = get_submission(sub_id)
 
         if not sub:
-            await query.answer("вќЊ Р—Р°СЏРІРєСѓ РЅРµ Р·РЅР°Р№РґРµРЅРѕ.", show_alert=True)
+            await _query_answer(query, "вќЊ Р—Р°СЏРІРєСѓ РЅРµ Р·РЅР°Р№РґРµРЅРѕ.", show_alert=True)
             return
         if sub["status"] != "pending":
-            await query.answer("вљ пёЏ Р’Р¶Рµ РѕР±СЂРѕР±Р»РµРЅРѕ.", show_alert=True)
+            await _query_answer(query, "вљ пёЏ Р’Р¶Рµ РѕР±СЂРѕР±Р»РµРЅРѕ.", show_alert=True)
             return
 
         new_status = "approved" if action == "approve" else "rejected"
@@ -804,13 +857,13 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         suffix = f"\n\n{result_icon} Р°РґРјС–РЅРѕРј {admin_tag}"
         try:
             if query.message.caption:
-                await query.edit_message_caption(
+                await _edit_message_caption(query, 
                     caption=query.message.caption + suffix,
                     parse_mode="Markdown",
                     reply_markup=None,
                 )
             else:
-                await query.edit_message_text(
+                await _edit_message_text(query, 
                     text=query.message.text + suffix,
                     parse_mode="Markdown",
                     reply_markup=None,
@@ -868,8 +921,8 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     markup = InlineKeyboardMarkup(
         [[
-            InlineKeyboardButton("вњ… РЎС…РІР°Р»РёС‚Рё", callback_data=f"approve_{sub_id}"),
-            InlineKeyboardButton("вќЊ Р’С–РґС…РёР»РёС‚Рё", callback_data=f"reject_{sub_id}"),
+            _btn("вњ… РЎС…РІР°Р»РёС‚Рё", callback_data=f"approve_{sub_id}"),
+            _btn("вќЊ Р’С–РґС…РёР»РёС‚Рё", callback_data=f"reject_{sub_id}"),
         ]]
     )
 
@@ -1038,4 +1091,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 

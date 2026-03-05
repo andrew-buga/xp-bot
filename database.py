@@ -20,9 +20,19 @@ def init_db():
             username   TEXT,
             first_name TEXT,
             xp         INTEGER DEFAULT 0,
-            joined_at  TEXT
+            joined_at  TEXT,
+            is_banned  INTEGER DEFAULT 0,
+            banned_at  TEXT
         )
     """)
+
+    # Lightweight migration for existing databases.
+    c.execute("PRAGMA table_info(users)")
+    user_columns = {row[1] for row in c.fetchall()}
+    if "is_banned" not in user_columns:
+        c.execute("ALTER TABLE users ADD COLUMN is_banned INTEGER DEFAULT 0")
+    if "banned_at" not in user_columns:
+        c.execute("ALTER TABLE users ADD COLUMN banned_at TEXT")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS tasks (
@@ -95,12 +105,47 @@ def get_user(user_id):
     return row
 
 
+def is_user_banned(user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT is_banned FROM users WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    return bool(row and row["is_banned"])
+
+
 def add_xp(user_id, amount):
     conn = get_conn()
     c = conn.cursor()
     c.execute("UPDATE users SET xp = xp + ? WHERE user_id=?", (amount, user_id))
     conn.commit()
     conn.close()
+
+
+def ban_user(user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE users SET is_banned=1, banned_at=? WHERE user_id=?",
+        (datetime.now().isoformat(), user_id),
+    )
+    changed = c.rowcount > 0
+    conn.commit()
+    conn.close()
+    return changed
+
+
+def unban_user(user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE users SET is_banned=0, banned_at=NULL WHERE user_id=?",
+        (user_id,),
+    )
+    changed = c.rowcount > 0
+    conn.commit()
+    conn.close()
+    return changed
 
 
 def get_leaderboard(limit=10):
@@ -110,6 +155,48 @@ def get_leaderboard(limit=10):
     rows = c.fetchall()
     conn.close()
     return rows
+
+
+def count_users():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users")
+    total = c.fetchone()[0]
+    conn.close()
+    return total
+
+
+def list_users(limit=10, offset=0):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT user_id, username, first_name, xp, joined_at, is_banned, banned_at
+        FROM users
+        ORDER BY joined_at DESC
+        LIMIT ? OFFSET ?
+        """,
+        (limit, offset),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def get_user_summary(user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT user_id, username, first_name, xp, joined_at, is_banned, banned_at
+        FROM users
+        WHERE user_id=?
+        """,
+        (user_id,),
+    )
+    row = c.fetchone()
+    conn.close()
+    return row
 
 
 def get_user_rank(user_id):

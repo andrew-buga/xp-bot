@@ -327,34 +327,34 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tasks = get_tasks()
 
     if not tasks:
-        await _reply(update, "рџ• РќР°СЂР°Р·С– Р·Р°РІРґР°РЅСЊ РЅРµРјР°С”. Р—Р°Р·РёСЂРЅРё РїС–Р·РЅС–С€Рµ!")
+        await _reply(update, "😕 Наразі завдань немає. Зазирни пізніше!")
         return
 
-    await _reply(update, "рџ“‹ *РЎРїРёСЃРѕРє Р·Р°РІРґР°РЅСЊ:*", parse_mode="Markdown")
+    await _reply(update, "📋 *Список завдань:*", parse_mode="Markdown")
 
     for task in tasks:
         done = has_approved(user.id, task["id"])
         pending = has_pending(user.id, task["id"])
 
         if done:
-            badge = " вњ…"
+            badge = " ✅"
         elif pending:
-            badge = " вЏі"
+            badge = " ⏳"
         else:
             badge = ""
 
         text = (
-            f"рџ“Њ *{task['title']}*{badge}\n"
+            f"📌 *{task['title']}*{badge}\n"
             f"{task['description']}\n"
-            f"рџ’Ћ РќР°РіРѕСЂРѕРґР°: *{task['xp_reward']} XP*"
+            f"💎 Нагорода: *{task['xp_reward']} XP*"
         )
 
         if done:
-            btn = _btn("вњ… Р’РёРєРѕРЅР°РЅРѕ", callback_data="noop")
+            btn = _btn("✅ Виконано", callback_data="noop")
         elif pending:
-            btn = _btn("вЏі РќР° РїРµСЂРµРІС–СЂС†С–", callback_data="noop")
+            btn = _btn("⏳ На перевірці", callback_data="noop")
         else:
-            btn = _btn("рџ“¤ Р—РґР°С‚Рё Р·Р°РІРґР°РЅРЅСЏ", callback_data=f"submit_{task['id']}")
+            btn = _btn("📤 Здати завдання", callback_data=f"submit_{task['id']}")
 
         await _reply(update, text, reply_markup=InlineKeyboardMarkup([[btn]]), parse_mode="Markdown")
 

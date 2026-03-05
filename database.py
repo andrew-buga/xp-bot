@@ -60,6 +60,13 @@ def init_db():
         )
     """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key   TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+
     # Стартові завдання (додаються лише якщо таблиця порожня)
     c.execute("SELECT COUNT(*) FROM tasks")
     if c.fetchone()[0] == 0:
@@ -328,3 +335,29 @@ def get_stats():
     tasks = c.fetchone()[0]
     conn.close()
     return users, tasks, pending, approved
+
+
+def get_setting(key, default=None):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT value FROM settings WHERE key=?", (key,))
+    row = c.fetchone()
+    conn.close()
+    if row is None:
+        return default
+    return row["value"]
+
+
+def set_setting(key, value):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT INTO settings (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value=excluded.value
+        """,
+        (key, value),
+    )
+    conn.commit()
+    conn.close()

@@ -39,8 +39,8 @@ nano /opt/xp-bot/.env
 `.env` must contain:
 
 ```bash
-BOT_TOKEN=<NEW_TOKEN_FROM_BOTFATHER>
-ADMIN_IDS=5266708533
+BOT_TOKEN=from BotFather
+ADMIN_IDS=from UserInfoID_Bot
 ```
 
 ## 4) systemd service

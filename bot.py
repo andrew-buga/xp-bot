@@ -95,7 +95,7 @@ def _normalize_text(text: str) -> str:
 
 
 def _btn(text: str, **kwargs) -> InlineKeyboardButton:
-    return _btn(_normalize_text(text), **kwargs)
+    return InlineKeyboardButton(_normalize_text(text), **kwargs)
 
 
 def _normalize_markup(markup):
@@ -138,22 +138,22 @@ async def _reply(update: Update, text: str, **kwargs):
 
 async def _query_answer(query, text: str | None = None, **kwargs):
     if text is None:
-        return await _query_answer(query, **kwargs)
-    return await _query_answer(query, _normalize_text(text), **kwargs)
+        return await query.answer(**kwargs)
+    return await query.answer(_normalize_text(text), **kwargs)
 
 
 async def _edit_message_text(query, text: str, **kwargs):
     kwargs["text"] = _normalize_text(text)
     if "reply_markup" in kwargs:
         kwargs["reply_markup"] = _normalize_markup(kwargs["reply_markup"])
-    return await _edit_message_text(query, **kwargs)
+    return await query.edit_message_text(**kwargs)
 
 
 async def _edit_message_caption(query, caption: str, **kwargs):
     kwargs["caption"] = _normalize_text(caption)
     if "reply_markup" in kwargs:
         kwargs["reply_markup"] = _normalize_markup(kwargs["reply_markup"])
-    return await _edit_message_caption(query, **kwargs)
+    return await query.edit_message_caption(**kwargs)
 
 
 def _is_rate_limited(user_id: int) -> bool:

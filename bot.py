@@ -86,7 +86,16 @@ def _is_admin(update: Update) -> bool:
     return bool(user and user.id in ADMIN_IDS)
 
 
+def _normalize_text(text: str) -> str:
+    # Recover strings that were decoded as cp1251 instead of utf-8.
+    try:
+        return text.encode("cp1251").decode("utf-8")
+    except Exception:
+        return text
+
+
 async def _reply(update: Update, text: str, **kwargs):
+    text = _normalize_text(text)
     if update.effective_message:
         return await update.effective_message.reply_text(text, **kwargs)
     if update.callback_query and update.callback_query.message:
@@ -227,7 +236,7 @@ def _clear_wizard(ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def _wizard_prompt(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str):
-    msg = await ctx.bot.send_message(chat_id=chat_id, text=text, parse_mode="Markdown")
+    msg = await ctx.bot.send_message(chat_id=chat_id, text=_normalize_text(text), parse_mode="Markdown")
     wizard = _wizard(ctx)
     if wizard is not None:
         wizard.setdefault("bot_prompt_ids", []).append(msg.message_id)
@@ -788,7 +797,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
 
         try:
-            await ctx.bot.send_message(sub["user_id"], user_msg, parse_mode="Markdown")
+            await ctx.bot.send_message(sub["user_id"], _normalize_text(user_msg), parse_mode="Markdown")
         except Exception:
             pass
 
@@ -870,14 +879,14 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ctx.bot.send_photo(
                     admin_id,
                     photo=proof_file_id,
-                    caption=admin_text,
+                    caption=_normalize_text(admin_text),
                     reply_markup=markup,
                     parse_mode="Markdown",
                 )
             else:
                 await ctx.bot.send_message(
                     admin_id,
-                    admin_text,
+                    _normalize_text(admin_text),
                     reply_markup=markup,
                     parse_mode="Markdown",
                 )

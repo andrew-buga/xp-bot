@@ -1,5 +1,8 @@
 import logging
 import asyncio
+import time
+from collections import defaultdict, deque
+from functools import wraps
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
@@ -21,6 +24,73 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# Anti-flood defaults: max 8 updates per 10 seconds for one user.
+RATE_LIMIT_WINDOW_SEC = 10
+RATE_LIMIT_MAX_EVENTS = 8
+RATE_LIMIT_NOTICE_COOLDOWN_SEC = 5
+_user_events: dict[int, deque[float]] = defaultdict(deque)
+_user_notice_ts: dict[int, float] = {}
+
+
+def _is_rate_limited(user_id: int) -> bool:
+    now = time.monotonic()
+    events = _user_events[user_id]
+
+    while events and (now - events[0]) > RATE_LIMIT_WINDOW_SEC:
+        events.popleft()
+
+    if len(events) >= RATE_LIMIT_MAX_EVENTS:
+        return True
+
+    events.append(now)
+    return False
+
+
+async def _send_rate_limit_notice(update: Update) -> None:
+    user = update.effective_user
+    if not user:
+        return
+
+    now = time.monotonic()
+    last_notice = _user_notice_ts.get(user.id, 0.0)
+    if now - last_notice < RATE_LIMIT_NOTICE_COOLDOWN_SEC:
+        return
+
+    _user_notice_ts[user.id] = now
+    text = "Забагато запитів. Спробуй ще раз через кілька секунд."
+
+    if update.callback_query:
+        try:
+            await update.callback_query.answer(text, show_alert=True)
+        except Exception:
+            pass
+        return
+
+    if update.effective_message:
+        await update.effective_message.reply_text(text)
+
+
+def rate_limit_user(func):
+    @wraps(func)
+    async def wrapper(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        if not user:
+            return await func(update, ctx)
+
+        # Admin actions are intentionally unrestricted for moderation flow.
+        if user.id in ADMIN_IDS:
+            return await func(update, ctx)
+
+        if _is_rate_limited(user.id):
+            await _send_rate_limit_notice(update)
+            return
+
+        return await func(update, ctx)
+
+    return wrapper
+
+
+@rate_limit_user
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user)
@@ -35,6 +105,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@rate_limit_user
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📖 *Як це працює:*\n\n"
@@ -48,6 +119,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@rate_limit_user
 async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user)
@@ -87,6 +159,7 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=markup, parse_mode="Markdown")
 
 
+@rate_limit_user
 async def cmd_xp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user)
@@ -101,6 +174,7 @@ async def cmd_xp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@rate_limit_user
 async def cmd_leaderboard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     top = get_leaderboard()
 
@@ -118,6 +192,7 @@ async def cmd_leaderboard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
+@rate_limit_user
 async def cmd_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if ctx.user_data.pop("submitting_task_id", None):
         await update.message.reply_text("❌ Здачу скасовано.")
@@ -135,6 +210,7 @@ def admin_only(func):
 
 
 @admin_only
+@rate_limit_user
 async def cmd_addtask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     raw = " ".join(ctx.args)
     try:
@@ -160,6 +236,7 @@ async def cmd_addtask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @admin_only
+@rate_limit_user
 async def cmd_deltask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         task_id = int(ctx.args[0])
@@ -170,6 +247,7 @@ async def cmd_deltask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @admin_only
+@rate_limit_user
 async def cmd_givexp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         uid = int(ctx.args[0])
@@ -181,6 +259,7 @@ async def cmd_givexp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 @admin_only
+@rate_limit_user
 async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     users, tasks, pending, approved = get_stats()
     await update.message.reply_text(
@@ -193,6 +272,7 @@ async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
+@rate_limit_user
 async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -284,6 +364,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
 
 
+@rate_limit_user
 async def handle_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     task_id = ctx.user_data.get("submitting_task_id")
     if not task_id:

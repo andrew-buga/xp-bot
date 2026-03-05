@@ -41,7 +41,6 @@ nano /opt/xp-bot/.env
 ```bash
 BOT_TOKEN=<NEW_TOKEN_FROM_BOTFATHER>
 ADMIN_IDS=5266708533
-CHANNEL_ID=@andriybuga
 ```
 
 ## 4) systemd service

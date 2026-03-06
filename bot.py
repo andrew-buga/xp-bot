@@ -13,40 +13,21 @@ async def cmd_addproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     product_id = add_product(name, description, price)
     await _reply(update, f"✅ Товар #{product_id} додано: {name} ({price} XP)")
 
+async def handle_shop_buy(query, user_id, product_id):
+    product = get_product(product_id)
+    if not product or not product['is_active']:
+        await _query_answer(query, "❌ Товар недоступний", show_alert=True)
+        return
+    db_user = get_user(user_id)
+    if db_user['spendable_xp'] < product['price']:
+        await _query_answer(query, "❌ Недостатньо XP для покупки", show_alert=True)
+        return
+    success = spend_xp(user_id, product['price'])
+    if success:
         await _query_answer(query, f"✅ Куплено: {product['name']}!", show_alert=True)
-    init_db()
-    app = Application.builder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("addproduct", cmd_addproduct))
-    app.add_handler(CommandHandler("delproduct", cmd_delproduct))
-    app.add_handler(CommandHandler("editproduct", cmd_editproduct))
-
-    app.add_handler(CommandHandler("shop", cmd_shop))
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("tasks", cmd_tasks))
-    app.add_handler(CommandHandler("xp", cmd_xp))
-    app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
-    app.add_handler(CommandHandler("cancel", cmd_cancel))
-    app.add_handler(CommandHandler("admin", cmd_admin))
-    app.add_handler(CommandHandler("bot_infoedit", cmd_bot_infoedit))
-    app.add_handler(CommandHandler("help_admin", cmd_help_admin))
-
-    app.add_handler(CommandHandler("addtask", cmd_addtask))
-    app.add_handler(CommandHandler("deltask", cmd_deltask))
-    app.add_handler(CommandHandler("givexp", cmd_givexp))
-    app.add_handler(CommandHandler("stats", cmd_stats))
-
-    app.add_handler(CallbackQueryHandler(shop_callback_handler, pattern="shop_buy_.*"))
-    app.add_handler(CallbackQueryHandler(on_button))
-
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_proof_media))
-
-    logger.info("🤖 Бот запущено!")
-    app.run_polling()
     else:
         await _query_answer(query, "❌ Помилка покупки", show_alert=True)
+
 def shop_callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data

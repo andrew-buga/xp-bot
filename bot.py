@@ -1,4 +1,79 @@
-﻿import logging
+﻿@admin_only
+@rate_limit_user
+async def cmd_addproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    try:
+        price = int(ctx.args[0])
+        name = ctx.args[1]
+        description = " ".join(ctx.args[2:])
+        if not name or price <= 0:
+            raise ValueError
+    except (IndexError, ValueError):
+        await _reply(update, "❌ Формат: /addproduct <ціна> <назва> <опис>")
+        return
+    product_id = add_product(name, description, price)
+    await _reply(update, f"✅ Товар #{product_id} додано: {name} ({price} XP)")
+
+@admin_only
+@rate_limit_user
+async def cmd_delproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    try:
+        product_id = int(ctx.args[0])
+        delete_product(product_id)
+        await _reply(update, f"✅ Товар #{product_id} видалено.")
+    except (IndexError, ValueError):
+        await _reply(update, "❌ Формат: /delproduct <product_id>")
+
+@admin_only
+@rate_limit_user
+async def cmd_editproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    try:
+        product_id = int(ctx.args[0])
+        price = int(ctx.args[1])
+        name = ctx.args[2]
+        description = " ".join(ctx.args[3:])
+        update_product(product_id, name=name, description=description, price=price)
+        await _reply(update, f"✅ Товар #{product_id} оновлено: {name} ({price} XP)")
+    except (IndexError, ValueError):
+        await _reply(update, "❌ Формат: /editproduct <product_id> <ціна> <назва> <опис>")
+async def handle_shop_buy(query, user_id, product_id):
+    product = get_product(product_id)
+    if not product or not product['is_active']:
+        await _query_answer(query, "❌ Товар недоступний", show_alert=True)
+        return
+    db_user = get_user(user_id)
+    if db_user['spendable_xp'] < product['price']:
+        await _query_answer(query, "❌ Недостатньо XP для покупки", show_alert=True)
+        return
+    success = spend_xp(user_id, product['price'])
+    if success:
+        await _query_answer(query, f"✅ Куплено: {product['name']}!", show_alert=True)
+    else:
+        await _query_answer(query, "❌ Помилка покупки", show_alert=True)
+def shop_callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = query.data
+    user = update.effective_user
+    if data.startswith("shop_buy_"):
+        product_id = int(data.split("_")[-1])
+        return handle_shop_buy(query, user.id, product_id)
+@rate_limit_user
+async def cmd_shop(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    register_user(user)
+    products = list_products()
+    if not products:
+        await _reply(update, "🛒 Магазин порожній. Зазирни пізніше!")
+        return
+    await _reply(update, "🛒 *Магазин нагород*", parse_mode="Markdown")
+    for product in products:
+        text = (
+            f"🎁 *{product['name']}*\n"
+            f"{product['description']}\n"
+            f"💸 Ціна: *{product['price']} XP*"
+        )
+        btn = _btn("Купити", callback_data=f"shop_buy_{product['id']}")
+        await _reply(update, text, reply_markup=InlineKeyboardMarkup([[btn]]), parse_mode="Markdown")
+import logging
 import time
 from collections import defaultdict, deque
 from functools import wraps
@@ -369,9 +444,10 @@ async def cmd_xp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _reply(
         update,
         (
-            f"в­ђ *РџСЂРѕС„С–Р»СЊ {user.first_name}*\n\n"
-            f"рџ’Ћ XP: *{db_user['xp']}*\n"
-            f"рџЏ† РњС–СЃС†Рµ: *#{rank}* Р· {total}"
+            f"👤 *Твій профіль {user.first_name}*\n\n"
+            f"🏆 Загальний рейтинг (Leaderboard): *{db_user['total_xp']} XP*\n"
+            f"💰 Доступно для витрат у Магазині: *{db_user['spendable_xp']} XP*\n"
+            f"📊 Місце: *#{rank}* з {total}"
         ),
         parse_mode="Markdown",
     )
@@ -385,11 +461,11 @@ async def cmd_leaderboard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _reply(update, "рџ• РўР°Р±Р»РёС†СЏ РїРѕСЂРѕР¶РЅСЏ. Р‘СѓРґСЊ РїРµСЂС€РёРј!")
         return
 
-    medals = ["рџҐ‡", "рџҐ€", "рџҐ‰"]
-    lines = ["рџЏ† *РўР°Р±Р»РёС†СЏ Р»С–РґРµСЂС–РІ*\n"]
+    medals = ["🥇", "🥈", "🥉"]
+    lines = ["🏆 *Таблиця лідерів* (кумулятивний XP)\n"]
     for i, user in enumerate(top):
         icon = medals[i] if i < 3 else f"{i + 1}."
-        lines.append(f"{icon} {_display_name(user)} вЂ” *{user['xp']} XP*")
+        lines.append(f"{icon} {_display_name(user)} — *{user['total_xp']} XP*")
 
     await _reply(update, "\n".join(lines), parse_mode="Markdown")
 
@@ -485,10 +561,14 @@ async def cmd_givexp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         uid = int(ctx.args[0])
         amount = int(ctx.args[1])
-        add_xp(uid, amount)
-        await _reply(update, f"вњ… РќР°СЂР°С…РѕРІР°РЅРѕ {amount} XP -> {uid}")
+        if amount >= 0:
+            add_xp(uid, amount)
+            await _reply(update, f"✅ Нараховано {amount} XP -> {uid}")
+        else:
+            admin_subtract_xp(uid, -amount)
+            await _reply(update, f"✅ Знято {-amount} XP -> {uid}")
     except (IndexError, ValueError):
-        await _reply(update, "вќЊ Р¤РѕСЂРјР°С‚: /givexp <user_id> <РєС–Р»СЊРєС–СЃС‚СЊ>")
+        await _reply(update, "❌ Формат: /givexp <user_id> <кількість>")
 
 
 @admin_only
@@ -551,12 +631,14 @@ def _render_user_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
     rows = []
 
     if not users:
-        lines.append("РќРµРјР°С” РєРѕСЂРёСЃС‚СѓРІР°С‡С–РІ.")
+        lines.append("Немає користувачів.")
     else:
         for user in users:
-            ban_mark = "рџљ«" if user["is_banned"] else ""
-            lines.append(f"`{user['user_id']}` | {_display_name(user)} | {user['xp']} XP {ban_mark}")
-            rows.append([_btn(f"Р”РµС‚Р°Р»С– {user['user_id']}", callback_data=f"a:ud:{user['user_id']}:{page}")])
+            ban_mark = "🚫" if user["is_banned"] else ""
+            lines.append(
+                f"`{user['user_id']}` | {_display_name(user)} | 🏆 {user['total_xp']} XP | 💰 {user['spendable_xp']} XP {ban_mark}"
+            )
+            rows.append([_btn(f"Деталі {user['user_id']}", callback_data=f"a:ud:{user['user_id']}:{page}")])
 
     nav = []
     if page > 0:
@@ -577,12 +659,13 @@ def _render_user_detail(user_id: int, page: int) -> tuple[str, InlineKeyboardMar
 
     status = "banned" if user["is_banned"] else "active"
     lines = [
-        "рџ‘¤ *РљР°СЂС‚РєР° РєРѕСЂРёСЃС‚СѓРІР°С‡Р°*",
+        "👤 *Картка користувача*",
         f"ID: `{user['user_id']}`",
         f"Username: {_display_name(user)}",
         f"Name: {user['first_name'] or '-'}",
         f"Joined: {user['joined_at'] or '-'}",
-        f"XP: {user['xp']}",
+        f"🏆 Загальний XP: {user['total_xp']}",
+        f"💰 Доступний XP: {user['spendable_xp']}",
         f"Status: *{status}*",
     ]
 
@@ -1061,9 +1144,15 @@ async def handle_proof_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+        app.add_handler(CommandHandler("addproduct", cmd_addproduct))
+        app.add_handler(CommandHandler("delproduct", cmd_delproduct))
+        app.add_handler(CommandHandler("editproduct", cmd_editproduct))
     init_db()
 
     app = Application.builder().token(BOT_TOKEN).build()
+
+
+    app.add_handler(CommandHandler("shop", cmd_shop))
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
@@ -1080,6 +1169,7 @@ def main():
     app.add_handler(CommandHandler("givexp", cmd_givexp))
     app.add_handler(CommandHandler("stats", cmd_stats))
 
+    app.add_handler(CallbackQueryHandler(shop_callback_handler, pattern="shop_buy_.*"))
     app.add_handler(CallbackQueryHandler(on_button))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))

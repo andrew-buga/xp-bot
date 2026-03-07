@@ -46,6 +46,8 @@ from database import (
     list_products,
     get_product,
     spend_xp,
+    add_to_inventory,
+    get_inventory,
 )
 
 
@@ -73,6 +75,7 @@ EDITABLE_TEXTS = {
             "⭐ /xp — мій профіль\n"
             "🏆 /leaderboard — таблиця лідерів\n"
             "🛒 /shop — магазин нагород\n"
+            "📦 /inventory — мій інвентар\n"
             "❓ /help — як це працює"
         ),
     },
@@ -257,36 +260,68 @@ async def cmd_shop(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not products:
         await _reply(update, "🛒 Магазин порожній. Зазирни пізніше!")
         return
-    await _reply(update, "🛒 *Магазин нагород*", parse_mode="Markdown")
+    db_user = get_user(user.id)
+    await _reply(
+        update,
+        f"🛒 *Магазин нагород*\n💰 Твій баланс: *{db_user['spendable_xp']} XP*",
+        parse_mode="Markdown",
+    )
     for product in products:
         text = (
             f"🎁 *{product['name']}*\n"
             f"{product['description']}\n"
             f"💸 Ціна: *{product['price']} XP*"
         )
-        btn = _btn("Купити", callback_data=f"shop_buy_{product['id']}")
+        btn = _btn("🛎️ Купити", callback_data=f"shop_buy_{product['id']}")
         await _reply(update, text, reply_markup=InlineKeyboardMarkup([[btn]]), parse_mode="Markdown")
+
+
+@rate_limit_user
+async def cmd_inventory(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    register_user(user)
+    items = get_inventory(user.id)
+    if not items:
+        await _reply(update, "📦 Твій інвентар порожній. Купуй щось у /shop ")
+        return
+    lines = ["📦 *Мій інвентар*\n"]
+    for item in items:
+        date = item["bought_at"][:10]
+        lines.append(f"🎁 {item['product_name']} — {item['price_paid']} XP ({date})")
+    await _reply(update, "\n".join(lines), parse_mode="Markdown")
 
 
 async def handle_shop_buy(query, user_id, product_id):
     product = get_product(product_id)
     if not product or not product['is_active']:
-        await _query_answer(query, "❌ Товар недоступний", show_alert=True)
+        await query.answer("❌ Товар недоступний", show_alert=True)
         return
     db_user = get_user(user_id)
     if db_user['spendable_xp'] < product['price']:
-        await _query_answer(query, "❌ Недостатньо XP для покупки", show_alert=True)
+        await query.answer(
+            f"❌ Недостатньо XP!\n"
+            f"Потрібно: {product['price']} XP\n"
+            f"У тебе: {db_user['spendable_xp']} XP",
+            show_alert=True,
+        )
         return
     success = spend_xp(user_id, product['price'])
     if success:
-        await _query_answer(query, f"✅ Куплено: {product['name']}!", show_alert=True)
+        add_to_inventory(user_id, product['id'], product['name'], product['price'])
+        await query.answer(f"✅ Куплено: {product['name']}!", show_alert=True)
+        await query.message.reply_text(
+            f"📦 *Покупка успішна!*\n\n"
+            f"🎁 {product['name']}\n"
+            f"💸 Списано: {product['price']} XP\n\n"
+            f"Переглянь свої покупки: /inventory",
+            parse_mode="Markdown",
+        )
     else:
-        await _query_answer(query, "❌ Помилка покупки", show_alert=True)
+        await query.answer("❌ Помилка покупки", show_alert=True)
 
 
 async def shop_callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     data = query.data
     user = update.effective_user
     if data.startswith("shop_buy_"):
@@ -1363,6 +1398,7 @@ def main():
 
 
     app.add_handler(CommandHandler("shop", cmd_shop))
+    app.add_handler(CommandHandler("inventory", cmd_inventory))
 
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))

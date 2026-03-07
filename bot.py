@@ -1123,12 +1123,11 @@ async def handle_proof_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-        app.add_handler(CommandHandler("addproduct", cmd_addproduct))
-        app.add_handler(CommandHandler("delproduct", cmd_delproduct))
-        app.add_handler(CommandHandler("editproduct", cmd_editproduct))
     init_db()
-
     app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("addproduct", cmd_addproduct))
+    app.add_handler(CommandHandler("delproduct", cmd_delproduct))
+    app.add_handler(CommandHandler("editproduct", cmd_editproduct))
 
 
     app.add_handler(CommandHandler("shop", cmd_shop))

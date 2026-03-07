@@ -1219,10 +1219,15 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     return
 
                 target_uid = wizard["payload"]["user_id"]
-                add_xp(target_uid, amount)
+                if amount >= 0:
+                    add_xp(target_uid, amount)
+                    result_text = f"✅ Нараховано +{amount} XP -> `{target_uid}`"
+                else:
+                    admin_subtract_xp(target_uid, -amount)
+                    result_text = f"✅ Знято {amount} XP -> `{target_uid}` (spendable_xp не нижче 0)"
                 await _cleanup_wizard_prompts(ctx, chat_id)
                 _clear_wizard(ctx)
-                await _reply(update, f"✅ Нараховано {amount} XP -> `{target_uid}`", parse_mode="Markdown")
+                await _reply(update, result_text, parse_mode="Markdown")
                 return
 
         if wizard["type"] == "add_product":

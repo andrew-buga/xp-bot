@@ -703,6 +703,29 @@ def _render_user_detail(user_id: int, page: int) -> tuple[str, InlineKeyboardMar
     return "\n".join(lines), markup
 
 
+def _render_shop_admin() -> tuple[str, InlineKeyboardMarkup]:
+    products = list_products(active_only=False)
+    lines = ["🛒 *Магазин товарів* (адмін)\n"]
+    rows = []
+
+    if not products:
+        lines.append("_Товарів ще немає. Натисни \"Додати товар\"._")
+    else:
+        for p in products:
+            status = "✅" if p["is_active"] else "🔴"
+            lines.append(f"{status} #{p['id']} — *{p['name']}* ({p['price']} XP)")
+            toggle_icon = "🔴 Деакт." if p["is_active"] else "✅ Акт."
+            rows.append([
+                _btn(f"✏️ Ред.", callback_data=f"a:shop_edit:{p['id']}"),
+                _btn(toggle_icon, callback_data=f"a:shop_toggle:{p['id']}"),
+                _btn(f"🗑 Вид.", callback_data=f"a:shop_del:{p['id']}"),
+            ])
+
+    rows.append([_btn("➕ Додати товар", callback_data="a:shop_add")])
+    rows.append([_btn("⬅ В меню", callback_data="a:menu")])
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
 async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wizard_type: str):
     chat_id = update.effective_chat.id
     if wizard_type == "add_task":
@@ -723,6 +746,35 @@ async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wi
             "bot_prompt_ids": [],
         }
         await _wizard_prompt(ctx, chat_id, "🎯 Введи *user_id* користувача:")
+        return
+
+    if wizard_type == "add_product":
+        ctx.user_data["admin_wizard"] = {
+            "type": "add_product",
+            "step": "name",
+            "payload": {},
+            "bot_prompt_ids": [],
+        }
+        await _wizard_prompt(ctx, chat_id, "🏷 Введи *назву* товару:")
+        return
+
+    if wizard_type.startswith("edit_product:"):
+        product_id = int(wizard_type.split(":")[1])
+        product = get_product(product_id)
+        if not product:
+            return
+        ctx.user_data["admin_wizard"] = {
+            "type": "edit_product",
+            "step": "name",
+            "payload": {"product_id": product_id},
+            "bot_prompt_ids": [],
+        }
+        await _wizard_prompt(
+            ctx,
+            chat_id,
+            f"✏️ Редагування товару #{product_id}: *{product['name']}*\n\n"
+            f"🏷 Введи нову *назву* (або «.» щоб залишити поточну: {product['name']}):",
+        )
         return
 
     if wizard_type.startswith("edit_text:"):
@@ -828,6 +880,38 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     if data == "a:xp":
         await _start_admin_wizard(update, ctx, "give_xp")
         await _query_answer(query, "Майстер нарахування XP запущено")
+        return
+
+    if data == "a:shop_list":
+        text, markup = _render_shop_admin()
+        await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data == "a:shop_add":
+        await _start_admin_wizard(update, ctx, "add_product")
+        await _query_answer(query, "Майстер додавання товару запущено")
+        return
+
+    if data.startswith("a:shop_del:"):
+        product_id = int(data.split(":")[2])
+        delete_product(product_id)
+        text, markup = _render_shop_admin()
+        await _edit_message_text(query, text=f"🗑 Товар #{product_id} видалено.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data.startswith("a:shop_toggle:"):
+        product_id = int(data.split(":")[2])
+        product = get_product(product_id)
+        if product:
+            update_product(product_id, is_active=not product["is_active"])
+        text, markup = _render_shop_admin()
+        await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data.startswith("a:shop_edit:"):
+        product_id = int(data.split(":")[2])
+        await _start_admin_wizard(update, ctx, f"edit_product:{product_id}")
+        await _query_answer(query, "Майстер редагування товару запущено")
         return
 
     if data == "be:menu":
@@ -1139,6 +1223,105 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await _cleanup_wizard_prompts(ctx, chat_id)
                 _clear_wizard(ctx)
                 await _reply(update, f"✅ Нараховано {amount} XP -> `{target_uid}`", parse_mode="Markdown")
+                return
+
+        if wizard["type"] == "add_product":
+            if wizard["step"] == "name":
+                if not text:
+                    await _wizard_prompt(ctx, chat_id, "❌ Назва не може бути порожньою. Введи назву:")
+                    return
+                wizard["payload"]["name"] = text
+                wizard["step"] = "description"
+                await _wizard_prompt(ctx, chat_id, "📄 Введи *опис* товару:")
+                return
+
+            if wizard["step"] == "description":
+                wizard["payload"]["description"] = text
+                wizard["step"] = "price"
+                await _wizard_prompt(ctx, chat_id, "💰 Введи *ціну* в XP (ціле число > 0):")
+                return
+
+            if wizard["step"] == "price":
+                try:
+                    price = int(text)
+                    if price <= 0:
+                        raise ValueError
+                except ValueError:
+                    await _wizard_prompt(ctx, chat_id, "❌ Ціна має бути цілим числом > 0. Спробуй ще раз:")
+                    return
+
+                product_id = add_product(
+                    wizard["payload"]["name"],
+                    wizard["payload"].get("description", ""),
+                    price,
+                )
+                await _cleanup_wizard_prompts(ctx, chat_id)
+                _clear_wizard(ctx)
+                await _reply(
+                    update,
+                    (
+                        "✅ *Товар додано*\n\n"
+                        f"ID: `{product_id}`\n"
+                        f"Назва: {wizard['payload']['name']}\n"
+                        f"Опис: {wizard['payload'].get('description', '-')}\n"
+                        f"Ціна: {price} XP"
+                    ),
+                    parse_mode="Markdown",
+                )
+                return
+
+        if wizard["type"] == "edit_product":
+            product_id = wizard["payload"]["product_id"]
+            product = get_product(product_id)
+
+            if wizard["step"] == "name":
+                new_name = text if text != "." else (product["name"] if product else "")
+                wizard["payload"]["new_name"] = new_name
+                wizard["step"] = "description"
+                cur_desc = product["description"] if product else "-"
+                await _wizard_prompt(ctx, chat_id, f"📄 Введи новий *опис* (або «.» щоб залишити: {cur_desc}):")
+                return
+
+            if wizard["step"] == "description":
+                cur_desc = product["description"] if product else ""
+                new_desc = text if text != "." else cur_desc
+                wizard["payload"]["new_description"] = new_desc
+                wizard["step"] = "price"
+                cur_price = product["price"] if product else 0
+                await _wizard_prompt(ctx, chat_id, f"💰 Введи нову *ціну* XP (або «.» щоб залишити: {cur_price}):")
+                return
+
+            if wizard["step"] == "price":
+                cur_price = product["price"] if product else 0
+                if text == ".":
+                    new_price = cur_price
+                else:
+                    try:
+                        new_price = int(text)
+                        if new_price <= 0:
+                            raise ValueError
+                    except ValueError:
+                        await _wizard_prompt(ctx, chat_id, "❌ Ціна має бути цілим числом > 0 або «.». Спробуй ще раз:")
+                        return
+
+                update_product(
+                    product_id,
+                    name=wizard["payload"]["new_name"],
+                    description=wizard["payload"]["new_description"],
+                    price=new_price,
+                )
+                await _cleanup_wizard_prompts(ctx, chat_id)
+                _clear_wizard(ctx)
+                await _reply(
+                    update,
+                    (
+                        f"✅ *Товар #{product_id} оновлено*\n\n"
+                        f"Назва: {wizard['payload']['new_name']}\n"
+                        f"Опис: {wizard['payload']['new_description']}\n"
+                        f"Ціна: {new_price} XP"
+                    ),
+                    parse_mode="Markdown",
+                )
                 return
 
         if wizard["type"] == "edit_text":

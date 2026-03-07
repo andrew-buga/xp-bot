@@ -85,6 +85,18 @@ def init_db():
         )
     """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS inventory (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL,
+            product_id  INTEGER NOT NULL,
+            product_name TEXT NOT NULL,
+            price_paid  INTEGER NOT NULL,
+            bought_at   TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
+        )
+    """)
+
     # Стартові завдання (додаються лише якщо таблиця порожня)
     c.execute("SELECT COUNT(*) FROM tasks")
     if c.fetchone()[0] == 0:
@@ -488,3 +500,28 @@ def set_setting(key, value):
     )
     conn.commit()
     conn.close()
+
+
+# ---------- Inventory ----------
+
+def add_to_inventory(user_id, product_id, product_name, price_paid):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO inventory (user_id, product_id, product_name, price_paid, bought_at) VALUES (?,?,?,?,?)",
+        (user_id, product_id, product_name, price_paid, datetime.now().isoformat()),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_inventory(user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT product_name, price_paid, bought_at FROM inventory WHERE user_id=? ORDER BY id DESC",
+        (user_id,),
+    )
+    rows = [dict(r) for r in c.fetchall()]
+    conn.close()
+    return rows

@@ -1,58 +1,4 @@
-﻿@admin_only
-@rate_limit_user
-async def cmd_addproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    try:
-        price = int(ctx.args[0])
-        name = ctx.args[1]
-        description = " ".join(ctx.args[2:])
-        if not name or price <= 0:
-            raise ValueError
-    except (IndexError, ValueError):
-        await _reply(update, "❌ Формат: /addproduct <ціна> <назва> <опис>")
-        return
-    product_id = add_product(name, description, price)
-    await _reply(update, f"✅ Товар #{product_id} додано: {name} ({price} XP)")
-
-async def handle_shop_buy(query, user_id, product_id):
-    product = get_product(product_id)
-    if not product or not product['is_active']:
-        await _query_answer(query, "❌ Товар недоступний", show_alert=True)
-        return
-    db_user = get_user(user_id)
-    if db_user['spendable_xp'] < product['price']:
-        await _query_answer(query, "❌ Недостатньо XP для покупки", show_alert=True)
-        return
-    success = spend_xp(user_id, product['price'])
-    if success:
-        await _query_answer(query, f"✅ Куплено: {product['name']}!", show_alert=True)
-    else:
-        await _query_answer(query, "❌ Помилка покупки", show_alert=True)
-
-def shop_callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-    user = update.effective_user
-    if data.startswith("shop_buy_"):
-        product_id = int(data.split("_")[-1])
-        return handle_shop_buy(query, user.id, product_id)
-@rate_limit_user
-async def cmd_shop(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    register_user(user)
-    products = list_products()
-    if not products:
-        await _reply(update, "🛒 Магазин порожній. Зазирни пізніше!")
-        return
-    await _reply(update, "🛒 *Магазин нагород*", parse_mode="Markdown")
-    for product in products:
-        text = (
-            f"🎁 *{product['name']}*\n"
-            f"{product['description']}\n"
-            f"💸 Ціна: *{product['price']} XP*"
-        )
-        btn = _btn("Купити", callback_data=f"shop_buy_{product['id']}")
-        await _reply(update, text, reply_markup=InlineKeyboardMarkup([[btn]]), parse_mode="Markdown")
-import logging
+﻿import logging
 import time
 from collections import defaultdict, deque
 from functools import wraps
@@ -69,6 +15,7 @@ from telegram.ext import (
 
 from config import ADMIN_IDS, BOT_TOKEN
 from database import (
+    admin_subtract_xp,
     add_submission,
     add_task,
     add_xp,
@@ -93,7 +40,15 @@ from database import (
     review_submission,
     set_setting,
     unban_user,
+    add_product,
+    update_product,
+    delete_product,
+    list_products,
+    get_product,
+    spend_xp,
 )
+
+
 
 logging.basicConfig(format="%(asctime)s | %(levelname)s | %(message)s", level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -285,11 +240,98 @@ def admin_only(func):
     @wraps(func)
     async def wrapper(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not _is_admin(update):
-            await _reply(update, "вќЊ РўС–Р»СЊРєРё РґР»СЏ Р°РґРјС–РЅС–РІ!")
+            await _reply(update, "❌ Тільки для адміністраторів!")
             return
         return await func(update, ctx)
-
     return wrapper
+
+
+# ---------- Shop ----------
+
+@rate_limit_user
+async def cmd_shop(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    register_user(user)
+    products = list_products()
+    if not products:
+        await _reply(update, "🛒 Магазин порожній. Зазирни пізніше!")
+        return
+    await _reply(update, "🛒 *Магазин нагород*", parse_mode="Markdown")
+    for product in products:
+        text = (
+            f"🎁 *{product['name']}*\n"
+            f"{product['description']}\n"
+            f"💸 Ціна: *{product['price']} XP*"
+        )
+        btn = _btn("Купити", callback_data=f"shop_buy_{product['id']}")
+        await _reply(update, text, reply_markup=InlineKeyboardMarkup([[btn]]), parse_mode="Markdown")
+
+
+async def handle_shop_buy(query, user_id, product_id):
+    product = get_product(product_id)
+    if not product or not product['is_active']:
+        await _query_answer(query, "❌ Товар недоступний", show_alert=True)
+        return
+    db_user = get_user(user_id)
+    if db_user['spendable_xp'] < product['price']:
+        await _query_answer(query, "❌ Недостатньо XP для покупки", show_alert=True)
+        return
+    success = spend_xp(user_id, product['price'])
+    if success:
+        await _query_answer(query, f"✅ Куплено: {product['name']}!", show_alert=True)
+    else:
+        await _query_answer(query, "❌ Помилка покупки", show_alert=True)
+
+
+async def shop_callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    user = update.effective_user
+    if data.startswith("shop_buy_"):
+        product_id = int(data.split("_")[-1])
+        await handle_shop_buy(query, user.id, product_id)
+
+
+@admin_only
+@rate_limit_user
+async def cmd_addproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    try:
+        price = int(ctx.args[0])
+        name = ctx.args[1]
+        description = " ".join(ctx.args[2:])
+        if not name or price <= 0:
+            raise ValueError
+    except (IndexError, ValueError):
+        await _reply(update, "❌ Формат: /addproduct <ціна> <назва> <опис>")
+        return
+    product_id = add_product(name, description, price)
+    await _reply(update, f"✅ Товар #{product_id} додано: {name} ({price} XP)")
+
+
+@admin_only
+@rate_limit_user
+async def cmd_delproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    try:
+        product_id = int(ctx.args[0])
+        delete_product(product_id)
+        await _reply(update, f"✅ Товар #{product_id} видалено.")
+    except (IndexError, ValueError):
+        await _reply(update, "❌ Формат: /delproduct <product_id>")
+
+
+@admin_only
+@rate_limit_user
+async def cmd_editproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    try:
+        product_id = int(ctx.args[0])
+        price = int(ctx.args[1])
+        name = ctx.args[2]
+        description = " ".join(ctx.args[3:])
+        update_product(product_id, name=name, description=description, price=price)
+        await _reply(update, f"✅ Товар #{product_id} оновлено: {name} ({price} XP)")
+    except (IndexError, ValueError):
+        await _reply(update, "❌ Формат: /editproduct <product_id> <ціна> <назва> <опис>")
 
 
 def _admin_menu_markup() -> InlineKeyboardMarkup:

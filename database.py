@@ -11,15 +11,6 @@ def get_conn():
 
 
 def init_db():
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS shop (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT NOT NULL,
-                description TEXT,
-                price       INTEGER NOT NULL,
-                is_active   INTEGER DEFAULT 1
-            )
-        """)
     conn = get_conn()
     c = conn.cursor()
 
@@ -84,6 +75,16 @@ def init_db():
         )
     """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS shop (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            description TEXT,
+            price       INTEGER NOT NULL,
+            is_active   INTEGER DEFAULT 1
+        )
+    """)
+
     # Стартові завдання (додаються лише якщо таблиця порожня)
     c.execute("SELECT COUNT(*) FROM tasks")
     if c.fetchone()[0] == 0:
@@ -139,19 +140,6 @@ def is_user_banned(user_id):
 
 
 def add_xp(user_id, amount):
-    def spend_xp(user_id, price):
-        conn = get_conn()
-        c = conn.cursor()
-        c.execute("SELECT spendable_xp FROM users WHERE user_id=?", (user_id,))
-        row = c.fetchone()
-        if not row or row[0] < price:
-            conn.close()
-            return False
-        new_spendable = row[0] - price
-        c.execute("UPDATE users SET spendable_xp=? WHERE user_id=?", (new_spendable, user_id))
-        conn.commit()
-        conn.close()
-        return True
     conn = get_conn()
     c = conn.cursor()
     # Add XP to both balances
@@ -164,6 +152,21 @@ def add_xp(user_id, amount):
     """, (amount, amount, amount, user_id))
     conn.commit()
     conn.close()
+
+
+def spend_xp(user_id, price):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT spendable_xp FROM users WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    if not row or row[0] < price:
+        conn.close()
+        return False
+    new_spendable = row[0] - price
+    c.execute("UPDATE users SET spendable_xp=? WHERE user_id=?", (new_spendable, user_id))
+    conn.commit()
+    conn.close()
+    return True
 
 
 def admin_subtract_xp(user_id, amount):
@@ -288,69 +291,77 @@ def get_tasks():
 
 
 def get_task(task_id):
-    def add_product(name, description, price):
-        conn = get_conn()
-        c = conn.cursor()
-        c.execute(
-            "INSERT INTO shop (name, description, price) VALUES (?, ?, ?)",
-            (name, description, price)
-        )
-        product_id = c.lastrowid
-        conn.commit()
-        conn.close()
-        return product_id
-
-    def update_product(product_id, name=None, description=None, price=None, is_active=None):
-        conn = get_conn()
-        c = conn.cursor()
-        fields = []
-        values = []
-        if name is not None:
-            fields.append("name=?")
-            values.append(name)
-        if description is not None:
-            fields.append("description=?")
-            values.append(description)
-        if price is not None:
-            fields.append("price=?")
-            values.append(price)
-        if is_active is not None:
-            fields.append("is_active=?")
-            values.append(is_active)
-        values.append(product_id)
-        if fields:
-            c.execute(f"UPDATE shop SET {', '.join(fields)} WHERE id=?", values)
-        conn.commit()
-        conn.close()
-
-    def delete_product(product_id):
-        conn = get_conn()
-        c = conn.cursor()
-        c.execute("DELETE FROM shop WHERE id=?", (product_id,))
-        conn.commit()
-        conn.close()
-
-    def list_products(active_only=True):
-        conn = get_conn()
-        c = conn.cursor()
-        if active_only:
-            c.execute("SELECT * FROM shop WHERE is_active=1")
-        else:
-            c.execute("SELECT * FROM shop")
-        rows = c.fetchall()
-        conn.close()
-        return rows
-
-    def get_product(product_id):
-        conn = get_conn()
-        c = conn.cursor()
-        c.execute("SELECT * FROM shop WHERE id=?", (product_id,))
-        row = c.fetchone()
-        conn.close()
-        return row
     conn = get_conn()
     c = conn.cursor()
     c.execute("SELECT * FROM tasks WHERE id=?", (task_id,))
+    row = c.fetchone()
+    conn.close()
+    return row
+
+
+# ---------- Shop ----------
+
+def add_product(name, description, price):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO shop (name, description, price) VALUES (?, ?, ?)",
+        (name, description, price)
+    )
+    product_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return product_id
+
+
+def update_product(product_id, name=None, description=None, price=None, is_active=None):
+    conn = get_conn()
+    c = conn.cursor()
+    fields = []
+    values = []
+    if name is not None:
+        fields.append("name=?")
+        values.append(name)
+    if description is not None:
+        fields.append("description=?")
+        values.append(description)
+    if price is not None:
+        fields.append("price=?")
+        values.append(price)
+    if is_active is not None:
+        fields.append("is_active=?")
+        values.append(is_active)
+    values.append(product_id)
+    if fields:
+        c.execute(f"UPDATE shop SET {', '.join(fields)} WHERE id=?", values)
+    conn.commit()
+    conn.close()
+
+
+def delete_product(product_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM shop WHERE id=?", (product_id,))
+    conn.commit()
+    conn.close()
+
+
+def list_products(active_only=True):
+    conn = get_conn()
+    c = conn.cursor()
+    if active_only:
+        c.execute("SELECT * FROM shop WHERE is_active=1")
+    else:
+        c.execute("SELECT * FROM shop")
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def get_product(product_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM shop WHERE id=?", (product_id,))
     row = c.fetchone()
     conn.close()
     return row

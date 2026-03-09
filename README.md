@@ -113,16 +113,22 @@ bash scripts/install_service.sh
 
 Хочете запустити бота для двох різних спільнот без додаткового хосту?
 
+**Linux/Mac:**
 ```bash
-# Скопіювати проект
-cp -r xp-bot xp-bot-2
-cd xp-bot-2
-
-# Створити окремий .env з новим токеном
+cp -r /path/to/xp-bot /path/to/xp-bot-2
+cd /path/to/xp-bot-2
 cp .env.example .env
 # Заповнити BOT_TOKEN та ADMIN_IDS для другого бота
+python bot.py
+```
 
-# Запустити
+**Windows (PowerShell):**
+```powershell
+Copy-Item -Path "C:\xp-bot" -Destination "C:\xp-bot-2" -Recurse
+cd C:\xp-bot-2
+# Відредагувати .env — вставити новий токен
+notepad .env
+.venv\Scripts\Activate.ps1
 python bot.py
 ```
 

@@ -920,26 +920,16 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     logger.info(f"👤 /start від {user.id}: depts={depts}, lang={lang}")
     
-    # 1️⃣ User is fully registered with departments - show welcome
+    # 1️⃣ User is fully registered - remind them to use /menu
     if depts:
-        departments = get_departments()
-        dept_list = "\n".join([
-            f"  {d['emoji']} {d['name']}"
-            for d in departments
-            if d['id'] in depts
-        ])
-        
-        welcome_text = get_message("welcome_multi_returning", lang, 
-                                   first_name=user.first_name or "друже",
-                                   depts=dept_list)
-        
-        # Меню з кнопками для змін
-        markup = InlineKeyboardMarkup([
-            [_btn("🌐 Змінити мову", callback_data="change_lang")],
-            [_btn(get_message("dept_btn_change", lang), callback_data="change_depts")],
-        ])
-        await _reply(update, welcome_text, reply_markup=markup, parse_mode="Markdown")
-        logger.info(f"✅ Користувач {user.id} повністю зареєстрований - показано привіт")
+        msg = "uk" if lang == "uk" else "ro" if lang == "ro" else "en"
+        reminders = {
+            "uk": "✅ Ви вже зареєстровані!\n\nНапишіть /menu аби переглянути команди.",
+            "en": "✅ You are already registered!\n\nType /menu to see commands.",
+            "ro": "✅ Sunteți deja înregistrat!\n\nScrieti /menu pentru a vedea comenzile."
+        }
+        await _reply(update, reminders[msg])
+        logger.info(f"✅ Користувач {user.id} вже зареєстрований - нагадано про /menu")
         return
     
     # 2️⃣ User has language but no departments - go to verification

@@ -65,6 +65,15 @@ from database import (
     add_idea,
     get_unreviewed_ideas,
     mark_idea_reviewed,
+    mark_idea_status,
+    get_idea,
+    get_user_departments,
+    add_user_department,
+    remove_user_department,
+    has_user_department,
+    set_user_role,
+    get_user_role,
+    is_supervisor_of_dept,
 )
 
 
@@ -184,6 +193,36 @@ async def _edit_message_caption(query, caption: str, **kwargs):
     if "reply_markup" in kwargs:
         kwargs["reply_markup"] = _normalize_markup(kwargs["reply_markup"])
     return await query.edit_message_caption(**kwargs)
+
+
+async def _notify_admins_new_idea(bot, idea_dict):
+    """Notify admins/supervisors about new idea
+    
+    idea_dict keys: id, user_id, text, is_anonymous, username, department_id
+    """
+    # Format notification text based on anonymity
+    if idea_dict['is_anonymous']:
+        text = f"💡 *Анонімна ідея*:\n\n{idea_dict['text']}"
+    else:
+        dept_name = ""
+        if idea_dict['department_id']:
+            dept = get_department(idea_dict['department_id'])
+            if dept:
+                dept_name = f" ({dept['emoji']} {dept['name']})"
+        text = f"💡 *Нова ідея від {idea_dict['username']}{dept_name}*:\n\n{idea_dict['text']}"
+    
+    # Notify all admins
+    for admin_id in ADMIN_IDS:
+        try:
+            await bot.send_message(admin_id, _normalize_text(text), parse_mode="Markdown")
+        except Exception as e:
+            logger.warning(f"Failed to notify admin {admin_id} about idea: {e}")
+    
+    # If idea has department, also notify supervisors of that dept
+    if idea_dict['department_id']:
+        # For now, supervisors are also admins or users with supervisor role
+        # Future: could check supervisor_depts_json when fully implemented
+        pass
 
 
 def _is_rate_limited(user_id: int) -> bool:
@@ -543,7 +582,7 @@ async def cmd_achievements(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @rate_limit_user
 @rate_limit_user
 async def cmd_idea(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Capture user idea submission"""
+    """Start idea submission flow"""
     user = update.effective_user
     register_user(user)
     lang = get_user_language(user.id)
@@ -551,11 +590,12 @@ async def cmd_idea(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ctx.user_data["submitting_idea"] = True
     
     await _reply(update,
-        get_message("idea_prompt", lang))
+        get_message("idea_prompt", lang),
+        parse_mode="Markdown")
 
 
 async def handle_idea_submission(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Handle idea text input."""
+    """Handle idea text input — save draft and ask for anonymity choice"""
     if not ctx.user_data.get("submitting_idea"):
         return
     
@@ -567,25 +607,75 @@ async def handle_idea_submission(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         await _reply(update, get_message("idea_empty", lang))
         return
     
+    # Store idea draft and get user's primary department
+    user_depts = get_user_departments(user.id)
+    primary_dept = user_depts[0] if user_depts else None
+    
+    ctx.user_data["idea_draft"] = {
+        "text": text,
+        "department_id": primary_dept,
+        "username": user.username or user.first_name or f"User{user.id}"
+    }
     ctx.user_data.pop("submitting_idea", None)
     
-    add_idea(user.id, text)
+    # Ask for anonymity choice
+    markup = InlineKeyboardMarkup([
+        [
+            _btn(get_message("idea_btn_named", lang), callback_data="idea_named"),
+            _btn(get_message("idea_btn_anon", lang), callback_data="idea_anon"),
+        ]
+    ])
     
     await _reply(update,
-        get_message("idea_submitted", lang, idea=text[:100]),
+        get_message("idea_anonymity_ask", lang),
+        reply_markup=markup,
         parse_mode="Markdown")
+
+
+async def handle_idea_anonymity_choice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle anonymity choice (named or anonymous)"""
+    query = update.callback_query
+    await _query_answer(query)
     
-    # Notify admins
-    admin_text = (
-        f"💡 *Нова ідея від {user.first_name or user.username or f'User{user.id}'}*\n\n"
-        f"Текст: \"{text}\""
+    user_id = query.from_user.id
+    lang = get_user_language(user_id)
+    
+    # Check if idea draft exists
+    if "idea_draft" not in ctx.user_data:
+        await _query_answer(query, "❌ Сесія експіровала. Спробуй /idea ще раз.", show_alert=True)
+        return
+    
+    draft = ctx.user_data["idea_draft"]
+    is_anonymous = query.data == "idea_anon"
+    
+    # Save idea to DB
+    idea_id = add_idea(
+        user_id=user_id,
+        text=draft["text"],
+        is_anonymous=is_anonymous,
+        department_id=draft["department_id"],
+        username=draft["username"]
     )
     
-    for admin_id in ADMIN_IDS:
-        try:
-            await ctx.bot.send_message(admin_id, _normalize_text(admin_text), parse_mode="Markdown")
-        except Exception as e:
-            logger.error(f"Failed to notify admin {admin_id}: {e}")
+    # Confirmation message
+    await _edit_message_text(query,
+        get_message("idea_submitted", lang),
+        parse_mode="Markdown")
+    
+    # Notify admins/supervisors
+    await _notify_admins_new_idea(ctx.bot, {
+        "id": idea_id,
+        "user_id": user_id,
+        "text": draft["text"],
+        "is_anonymous": is_anonymous,
+        "username": draft["username"],
+        "department_id": draft["department_id"]
+    })
+    
+    # Cleanup
+    ctx.user_data.pop("idea_draft", None)
+    
+    logger.info(f"💡 Ідея #{idea_id} від {user_id} ({draft['username']}): anonymous={is_anonymous}")
 
 
 
@@ -2036,6 +2126,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_verify_retry, pattern="^verify_retry$"))
     app.add_handler(CallbackQueryHandler(handle_department_selection, pattern="^dept_"))
     app.add_handler(CallbackQueryHandler(handle_tasks_category, pattern="^tasks_"))
+    app.add_handler(CallbackQueryHandler(handle_idea_anonymity_choice, pattern="^idea_(named|anon)$"))
     
     # Shop & other callbacks
     app.add_handler(CallbackQueryHandler(shop_callback_handler, pattern="shop_buy_.*"))

@@ -231,7 +231,7 @@ MESSAGES = {
     "idea_prompt": {
         "en": "💡 *Share your idea!*\n\nHow would you like to see ATUR? What can be improved?\n\n_Just type your idea below (or /cancel to skip)_",
         "ro": "💡 *Partajează-ți ideea!*\n\nCum ai dori să vezi ATUR? Ce se poate îmbunătăți?\n\n_Doar tastează ideea ta mai jos (sau /cancel pentru a sări)_",
-        "uk": "💡 *Поділись своєю ідеєю!*\n\nКиїм би ти хотів бачити ATUR? Що можна поліпшити?\n\n_Просто напиши свою ідею нижче (або /cancel щоб скасувати)_",
+        "uk": "💡 *Ось, поділись своєю ідеєю!*\n\nЯк би ти хотів/а, щоб ATUR розвивався? Що можна покращити?\n\n_Просто напиши свою ідею нижче (або /cancel щоб пропустити)_",
     },
     
     "idea_empty": {
@@ -240,10 +240,28 @@ MESSAGES = {
         "uk": "❌ Ідея не може бути порожною. Спробуй ще раз!",
     },
     
+    "idea_anonymity_ask": {
+        "en": "Would you like to share this idea anonymously or with your name?",
+        "ro": "Doriți să partajați această idee anonim sau cu numele vostru?",
+        "uk": "Надіслати ідею анонімно чи від свого імені?",
+    },
+    
+    "idea_btn_named": {
+        "en": "👤 With my name",
+        "ro": "👤 Cu numele meu",
+        "uk": "👤 Від мого імені",
+    },
+    
+    "idea_btn_anon": {
+        "en": "🕵️ Anonymously",
+        "ro": "🕵️ Anonim",
+        "uk": "🕵️ Анонімно",
+    },
+    
     "idea_submitted": {
-        "en": "✅ *Thanks for the idea!*\n\n💭 \"{idea}\" \n\nAdmins will definitely read it! 🐿",
-        "ro": "✅ *Mulțumesc pentru idee!*\n\n💭 \"{idea}\" \n\nAdministratorii o vor citi cu siguranță! 🐿",
-        "uk": "✅ *Спасибо за ідею!*\n\n💭 \"{idea}\" \n\nАдміністрація обов'язково прочитає! 🐿",
+        "en": "✅ *Thanks!* 🐿️\n\nI'm already forwarding your idea to the admins — they'll definitely check it out!",
+        "ro": "✅ *Mulțumesc!* 🐿️\n\nDeja trimit ideea ta administratorilor — o vor citi cu siguranță!",
+        "uk": "✅ *Дякую!* 🐿️\n\nЯ вже передаю твою ідею адмінам — вони обов'язково її розглянуть!",
     },
     
     # ========== HELP ==========

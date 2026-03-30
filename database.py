@@ -1,4 +1,5 @@
 import sqlite3
+import json
 from datetime import datetime, timedelta
 
 DB_PATH = "bot_data.db"
@@ -58,6 +59,20 @@ def init_db():
         c.execute("ALTER TABLE users ADD COLUMN verified_at TEXT")
     if "needs_recheck" not in user_columns:
         c.execute("ALTER TABLE users ADD COLUMN needs_recheck INTEGER DEFAULT 0")
+    
+    # New columns for multi-dept + role system
+    if "departments_json" not in user_columns:
+        c.execute("ALTER TABLE users ADD COLUMN departments_json TEXT")
+        # Migrate: existing department_id → departments_json (JSON array)
+        c.execute("SELECT user_id, department_id FROM users WHERE department_id IS NOT NULL")
+        for row in c.fetchall():
+            import json
+            dept_json = json.dumps([row['department_id']])
+            c.execute("UPDATE users SET departments_json=? WHERE user_id=?", (dept_json, row['user_id']))
+        logger.info("✅ Migrated department_id → departments_json")
+    
+    if "role" not in user_columns:
+        c.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
 
     # ============ DEPARTMENTS TABLE ============
     c.execute("""
@@ -160,9 +175,29 @@ def init_db():
             text       TEXT NOT NULL,
             created_at TEXT,
             is_reviewed INTEGER DEFAULT 0,
+            is_anonymous INTEGER DEFAULT 0,
+            username TEXT,
+            department_id INTEGER,
+            status TEXT DEFAULT 'new',
             FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     """)
+
+    # Lightweight migration for ideas table
+    c.execute("PRAGMA table_info(ideas)")
+    idea_columns = {row[1] for row in c.fetchall()}
+    
+    if "is_anonymous" not in idea_columns:
+        c.execute("ALTER TABLE ideas ADD COLUMN is_anonymous INTEGER DEFAULT 0")
+    if "username" not in idea_columns:
+        c.execute("ALTER TABLE ideas ADD COLUMN username TEXT")
+    if "department_id" not in idea_columns:
+        c.execute("ALTER TABLE ideas ADD COLUMN department_id INTEGER")
+    if "status" not in idea_columns:
+        c.execute("ALTER TABLE ideas ADD COLUMN status TEXT DEFAULT 'new'")
+        # Migrate is_reviewed → status: is_reviewed=1 → status='reviewed', else 'new'
+        c.execute("UPDATE ideas SET status='reviewed' WHERE is_reviewed=1")
+        c.execute("UPDATE ideas SET status='new' WHERE is_reviewed=0")
 
     # ============ INSERT 60+ TASKS IF TABLE IS EMPTY ============
     c.execute("SELECT COUNT(*) FROM tasks")
@@ -473,6 +508,95 @@ def select_department(user_id, department_id):
     )
     conn.commit()
     conn.close()
+
+
+# ============ MULTI-DEPARTMENT SYSTEM ============
+
+def get_user_departments(user_id):
+    """Get list of department IDs for user
+    
+    Returns:
+        list[int]: e.g., [1, 3, 5] for user in 3 departments
+    """
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT departments_json FROM users WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    
+    if not row or not row['departments_json']:
+        return []
+    
+    try:
+        return json.loads(row['departments_json'])
+    except:
+        return []
+
+
+def add_user_department(user_id, dept_id):
+    """Add department to user's list"""
+    depts = get_user_departments(user_id)
+    if dept_id not in depts:
+        depts.append(dept_id)
+        depts.sort()
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("UPDATE users SET departments_json=? WHERE user_id=?", (json.dumps(depts), user_id))
+        conn.commit()
+        conn.close()
+
+
+def remove_user_department(user_id, dept_id):
+    """Remove department from user's list"""
+    depts = get_user_departments(user_id)
+    if dept_id in depts:
+        depts.remove(dept_id)
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("UPDATE users SET departments_json=? WHERE user_id=?", (json.dumps(depts), user_id))
+        conn.commit()
+        conn.close()
+
+
+def has_user_department(user_id, dept_id):
+    """Check if user is in department"""
+    depts = get_user_departments(user_id)
+    return dept_id in depts
+
+
+# ============ ROLE SYSTEM ============
+
+def set_user_role(user_id, role):
+    """Set user role: 'user', 'supervisor', 'admin'"""
+    if role not in ('user', 'supervisor', 'admin'):
+        raise ValueError(f"Invalid role: {role}")
+    
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("UPDATE users SET role=? WHERE user_id=?", (role, user_id))
+    conn.commit()
+    conn.close()
+
+
+def get_user_role(user_id):
+    """Get user role ('user', 'supervisor', or 'admin')"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT role FROM users WHERE user_id=?", (user_id,))
+    row = c.fetchone()
+    conn.close()
+    
+    return row['role'] if row and row['role'] else 'user'
+
+
+def is_supervisor_of_dept(user_id, dept_id):
+    """Check if user is supervisor of specific department"""
+    role = get_user_role(user_id)
+    if role != 'supervisor':
+        return False
+    
+    # Check if user supervises this department
+    return has_user_department(user_id, dept_id)
 
 
 def mark_verified(user_id):
@@ -986,13 +1110,24 @@ def get_inventory(user_id):
 
 # ============ IDEAS (NEW) ----------
 
-def add_idea(user_id, text):
-    """User submits an idea"""
+def add_idea(user_id, text, is_anonymous=False, department_id=None, username=None):
+    """User submits an idea
+    
+    Args:
+        user_id: User ID (always stored for audit trail)
+        text: Idea text content
+        is_anonymous: Boolean - True for anonymous submission
+        department_id: Which department submitted this idea
+        username: User's name/username (always stored, hidden in UI if anonymous)
+    
+    Returns:
+        idea_id: ID of created idea
+    """
     conn = get_conn()
     c = conn.cursor()
     c.execute(
-        "INSERT INTO ideas (user_id, text, created_at) VALUES (?, ?, ?)",
-        (user_id, text, datetime.now().isoformat())
+        "INSERT INTO ideas (user_id, text, created_at, is_anonymous, username, department_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (user_id, text, datetime.now().isoformat(), 1 if is_anonymous else 0, username, department_id, 'new')
     )
     idea_id = c.lastrowid
     conn.commit()
@@ -1000,22 +1135,61 @@ def add_idea(user_id, text):
     return idea_id
 
 
-def get_unreviewed_ideas():
-    """Get all ideas that haven't been reviewed"""
+def get_unreviewed_ideas(role=None, user_id=None, dept_filter=None):
+    """Get ideas with smart filtering based on user role
+    
+    Args:
+        role: 'user', 'supervisor', or 'admin'
+        user_id: Current user's ID
+        dept_filter: List of department IDs to filter (for supervisors)
+    
+    Returns:
+        List of ideas matching filters with status='new'
+    """
     conn = get_conn()
     c = conn.cursor()
-    c.execute(
-        "SELECT * FROM ideas WHERE is_reviewed=0 ORDER BY created_at DESC"
-    )
+    
+    if role == 'admin':
+        # Admins see all new ideas
+        c.execute(
+            "SELECT * FROM ideas WHERE status='new' ORDER BY created_at DESC"
+        )
+    elif role == 'supervisor' and dept_filter:
+        # Supervisors see ideas only from their supervised departments
+        placeholders = ','.join('?' * len(dept_filter))
+        c.execute(
+            f"SELECT * FROM ideas WHERE status='new' AND department_id IN ({placeholders}) ORDER BY created_at DESC",
+            dept_filter
+        )
+    else:
+        # Regular users cannot see ideas list
+        conn.close()
+        return []
+    
     rows = c.fetchall()
     conn.close()
     return rows
 
 
 def mark_idea_reviewed(idea_id):
-    """Mark idea as reviewed"""
+    """Mark idea as reviewed (convenience wrapper)"""
+    mark_idea_status(idea_id, 'reviewed')
+
+
+def mark_idea_status(idea_id, status):
+    """Update idea status ('new' → 'reviewed')"""
     conn = get_conn()
     c = conn.cursor()
-    c.execute("UPDATE ideas SET is_reviewed=1 WHERE id=?", (idea_id,))
+    c.execute("UPDATE ideas SET status=? WHERE id=?", (status, idea_id))
     conn.commit()
     conn.close()
+
+
+def get_idea(idea_id):
+    """Fetch single idea by ID"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM ideas WHERE id=?", (idea_id,))
+    row = c.fetchone()
+    conn.close()
+    return row

@@ -1634,6 +1634,9 @@ async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wi
 async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
+    user_id = query.from_user.id
+    
+    logger.debug(f"Admin callback handler for user {user_id}: {data}")
     
     # Extract department context from callback data (format: "a:action:page:d<dept_id>" or "a:action:d<dept_id>")
     dept_id = None
@@ -1689,6 +1692,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         return
 
     if data.startswith("a:users:"):
+        logger.debug(f"Handling a:users: callback for user {user_id}")
         parts = data.split(":")
         page = int(parts[2])
         dept_filter = parts[3] if len(parts) > 3 else None
@@ -1700,6 +1704,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             text, markup = _render_user_page(page)
         
         await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+        logger.debug(f"User page rendered for user {user_id}")
         return
 
     if data.startswith("a:ud:"):
@@ -1770,15 +1775,16 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         return
 
     if data.startswith("a:ideas:"):
+        logger.debug(f"Handling a:ideas: callback for user {user_id}")
         parts = data.split(":")
         page = int(parts[2]) if len(parts) > 2 else 0
         dept_filter = parts[3] if len(parts) > 3 else None
         
-        user_id = query.from_user.id
         role = get_user_role(user_id) or "user"
         
         text, markup = _render_ideas_page(page, user_id, role)
         await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+        logger.debug(f"Ideas page rendered for user {user_id} with role {role}")
         return
 
     if data.startswith("a:idea_mark:"):
@@ -1838,11 +1844,13 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         return
 
     if data.startswith("a:xp:"):
+        logger.debug(f"Handling a:xp: callback for user {user_id}")
         dept_filter = data.split(":")[2] if len(data.split(":")) > 2 else None
         dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
         
         await _start_admin_wizard(update, ctx, f"give_xp:{dept_id or ''}")
         await _query_answer(query, "Майстер нарахування XP запущено")
+        logger.debug(f"XP wizard started for user {user_id}")
         return
 
     if data == "a:shop_list":
@@ -1963,7 +1971,14 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown")
         return
 
+    # Admin panel callbacks - check permissions
     if data.startswith("a:") or data.startswith("be:"):
+        user_id = query.from_user.id
+        if user_id not in ADMIN_IDS:
+            await _query_answer(query, "❌ Тільки для адмінів!", show_alert=True)
+            logger.warning(f"Unauthorized admin callback attempt from user {user_id}: {data}")
+            return
+        logger.debug(f"Admin callback from {user_id}: {data}")
         await _handle_admin_callback(update, ctx)
         return
 

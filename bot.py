@@ -1312,13 +1312,13 @@ def _render_user_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 
-def _render_user_detail(user_id: int, page: int) -> tuple[str, InlineKeyboardMarkup] | tuple[None, None]:
-    user = get_user_summary(user_id)
+def _render_user_detail(target_user_id: int, page: int, admin_user_id: int | None = None) -> tuple[str, InlineKeyboardMarkup] | tuple[None, None]:
+    user = get_user_summary(target_user_id)
     if not user:
         return None, None
 
     status = "banned" if user["is_banned"] else "active"
-    role = get_user_role(user_id) or "user"
+    role = get_user_role(target_user_id) or "user"
     
     # Format role display
     role_emoji = {"admin": "👑", "supervisor": "📋", "user": "👤"}.get(role, "❓")
@@ -1349,8 +1349,8 @@ def _render_user_detail(user_id: int, page: int) -> tuple[str, InlineKeyboardMar
         action_btn = _btn("🚫 Ban", callback_data=f"a:ban:{user['user_id']}:{page}")
     rows.append([action_btn])
     
-    # Role change buttons (only if user is not admin themselves)
-    if user["user_id"] != user_id:  # Can't change own role
+    # Role change buttons (only if viewing a different user)
+    if admin_user_id is None or target_user_id != admin_user_id:
         role_buttons = []
         if role != "user":
             role_buttons.append(_btn("👤 User", callback_data=f"a:urole:{user['user_id']}:user:{page}"))
@@ -1714,7 +1714,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         dept_filter = parts[4] if len(parts) > 4 else None
         dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
         
-        text, markup = _render_user_detail(user_id, page)
+        text, markup = _render_user_detail(user_id, page, query.from_user.id)
         if not text:
             await _query_answer(query, "Користувача не знайдено", show_alert=True)
             return
@@ -1735,7 +1735,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         if not ok:
             await _query_answer(query, "Користувача не знайдено", show_alert=True)
             return
-        text, markup = _render_user_detail(user_id, page)
+        text, markup = _render_user_detail(user_id, page, query.from_user.id)
         await _edit_message_text(query, text=f"🚫 Користувача забанено.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
@@ -1750,7 +1750,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         if not ok:
             await _query_answer(query, "Користувача не знайдено", show_alert=True)
             return
-        text, markup = _render_user_detail(user_id, page)
+        text, markup = _render_user_detail(user_id, page, query.from_user.id)
         await _edit_message_text(query, text=f"✅ Бан знято.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
@@ -1769,7 +1769,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         set_user_role(target_user_id, new_role)
         
         # Refresh user detail
-        text, markup = _render_user_detail(target_user_id, page)
+        text, markup = _render_user_detail(target_user_id, page, query.from_user.id)
         role_display = {"admin": "Адміністратор", "supervisor": "Куратор команди", "user": "Користувач"}[new_role]
         await _edit_message_text(query, text=f"✅ Роль змінена на: *{role_display}*\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return

@@ -849,7 +849,7 @@ def _admin_menu_markup(dept_id: int | None = None) -> InlineKeyboardMarkup:
         [
             [_btn("➕ Додати завдання", callback_data=f"a:add:{dept_id or 'g'}")],
             [_btn("🗑 Видалити завдання", callback_data=f"a:dellist:0:{f'd{dept_id}' if dept_id else 'g'}")],
-            [_btn("👥 Користувачі", callback_data=f"a:users:0:{f'd{dept_id}' if dept_id else 'g'}")],
+            [_btn("👥 Користувачі", callback_data="a:users:")],
             [_btn("💡 Ідеї", callback_data=f"a:ideas:0:{f'd{dept_id}' if dept_id else 'g'}")],
             [_btn("🎁 Нарахувати XP", callback_data=f"a:xp:{dept_id or 'g'}")],
             [_btn("📊 Статистика", callback_data=f"a:stats:{dept_id or 'g'}")],
@@ -1287,6 +1287,32 @@ def _render_task_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 
+def _render_users_filter_menu() -> tuple[str, InlineKeyboardMarkup]:
+    """Show menu to choose: all users or users by department"""
+    lines = [
+        "👥 *Вибір фільтру користувачів*",
+        "",
+        "Що бачити?",
+    ]
+    
+    departments = get_departments()
+    rows = []
+    
+    # All users button
+    rows.append([_btn("📊 Всі користувачі", callback_data="a:users:0:all")])
+    
+    # Separator
+    rows.append([_btn("📍 За департаментами:", callback_data="noop")])
+    
+    # Department buttons
+    for dept in departments:
+        rows.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"a:users:0:d{dept['id']}")])
+    
+    rows.append([_btn("⬅ В меню", callback_data="a:menu")])
+    
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
 def _render_user_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
     total = count_users()
     total_pages = max(1, (total + ADMIN_USERS_PAGE_SIZE - 1) // ADMIN_USERS_PAGE_SIZE)
@@ -1308,18 +1334,24 @@ def _render_user_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
 
     nav = []
     if page > 0:
-        nav.append(_btn("◀ Prev", callback_data=f"a:users:{page - 1}"))
+        nav.append(_btn("◀ Prev", callback_data=f"a:users:{page - 1}:all"))
     if page < total_pages - 1:
-        nav.append(_btn("Next ▶", callback_data=f"a:users:{page + 1}"))
+        nav.append(_btn("Next ▶", callback_data=f"a:users:{page + 1}:all"))
     if nav:
         rows.append(nav)
-    rows.append([_btn("⬅ В меню", callback_data="a:menu")])
+    rows.append([_btn("⬅ Назад", callback_data="a:users:")])
 
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 
-def _select_user_dept_for_role(target_user_id: int, page: int) -> tuple[str, InlineKeyboardMarkup]:
-    """Show department selection for editing user's department roles"""
+def _select_user_dept_for_role(target_user_id: int, page: int, back_callback: str = "a:users:") -> tuple[str, InlineKeyboardMarkup]:
+    """Show department selection for editing user's department roles
+    
+    Args:
+        target_user_id: User being edited
+        page: Current page (unused, for consistency)
+        back_callback: Callback to return to (default: users filter menu)
+    """
     user = get_user_summary(target_user_id)
     user_depts = get_user_departments(target_user_id)
     
@@ -1339,7 +1371,7 @@ def _select_user_dept_for_role(target_user_id: int, page: int) -> tuple[str, Inl
     else:
         lines.append("_Користувач не належить до жодного департаменту._")
     
-    rows.append([_btn("⬅ До списку", callback_data=f"a:users:{page}")])
+    rows.append([_btn("⬅ Назад", callback_data=back_callback)])
     
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
@@ -1433,9 +1465,8 @@ def _render_user_detail(target_user_id: int, page: int, admin_user_id: int | Non
             if dept_role_buttons:
                 rows.append(dept_role_buttons)
     
-    # Back button  
-    backend_callback = f"a:users:{page}:d{dept_id}" if dept_id else f"a:users:{page}"
-    rows.append([_btn("⬅ До списку", callback_data=backend_callback)])
+    # Back button - return to users filter menu
+    rows.append([_btn("⬅ Назад", callback_data="a:users:")])
 
     markup = InlineKeyboardMarkup(rows)
     return "\n".join(lines), markup
@@ -1500,9 +1531,10 @@ def _render_user_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeybo
         nav.append(_btn("Next ▶", callback_data=f"a:users:{page + 1}:d{dept_id}"))
     if nav:
         rows.append(nav)
-    rows.append([_btn("⬅ В меню", callback_data="a:menu")])
+    rows.append([_btn("⬅ Назад", callback_data="a:users:")])
 
     return "\n".join(lines), InlineKeyboardMarkup(rows)
+
 
 
 def _render_task_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeyboardMarkup]:
@@ -1769,12 +1801,23 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         parts = data.split(":")
         page = int(parts[2])
         dept_filter = parts[3] if len(parts) > 3 else None
-        dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
         
-        if dept_id:
+        # Handle special case: show filter menu
+        if dept_filter is None:
+            text, markup = _render_users_filter_menu()
+            await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+            logger.debug(f"Users filter menu shown for user {user_id}")
+            return
+        
+        # Parse department filter
+        if dept_filter == "all":
+            text, markup = _render_user_page(page)
+        elif dept_filter.startswith("d") and dept_filter[1:].isdigit():
+            dept_id = int(dept_filter[1:])
             text, markup = _render_user_page_by_dept(dept_id, page)
         else:
-            text, markup = _render_user_page(page)
+            # Invalid filter, show menu again
+            text, markup = _render_users_filter_menu()
         
         await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
         logger.debug(f"User page rendered for user {user_id}")
@@ -1798,7 +1841,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
                 text, markup = _render_user_detail(user_id, page, query.from_user.id, user_depts[0])
             else:
                 # Multiple departments, show selection
-                text, markup = _select_user_dept_for_role(user_id, page)
+                text, markup = _select_user_dept_for_role(user_id, page, back_callback="a:users:")
         else:
             # Department specified, show user detail for that department
             text, markup = _render_user_detail(user_id, page, query.from_user.id, dept_id)

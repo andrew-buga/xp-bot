@@ -18,6 +18,8 @@ from telegram.ext import (
 
 from config import ADMIN_IDS, BOT_TOKEN, TELEGRAM_CHANNEL_ID
 from messages import get_message
+from analytics import log_event, log_admin_action, log_error
+from supervision import update_supervision_summary
 from database import (
     admin_subtract_xp,
     add_submission,
@@ -605,6 +607,13 @@ async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_
             if dept_id not in current_depts:
                 add_user_department(user_id, dept_id)
         
+        # 📊 Log user registration event
+        log_event('user_registered', user_id=user_id, data={
+            'language': lang,
+            'departments': selected,
+            'timestamp': datetime.utcnow().isoformat()
+        })
+        
         # Format dept list for message
         departments = get_departments()
         dept_list = "\n".join([
@@ -738,6 +747,14 @@ async def handle_idea_anonymity_choice(update: Update, ctx: ContextTypes.DEFAULT
         username=draft["username"]
     )
     
+    # 📊 Log idea submission event
+    log_event('idea_submitted', user_id=user_id, data={
+        'idea_id': idea_id,
+        'anonymous': is_anonymous,
+        'department_id': draft["department_id"],
+        'text_preview': draft["text"][:100]
+    })
+    
     # Confirmation message
     await _edit_message_text(query,
         get_message("idea_submitted", lang),
@@ -777,6 +794,14 @@ async def handle_shop_buy(query, user_id, product_id):
     success = spend_xp(user_id, product['price'])
     if success:
         add_to_inventory(user_id, product['id'], product['name'], product['price'])
+        
+        # 📊 Log XP spending event
+        log_event('xp_spent', user_id=user_id, data={
+            'amount': product['price'],
+            'product_id': product['id'],
+            'product_name': product['name'][:50]
+        })
+        
         await query.answer(f"✅ Куплено: {product['name']}!", show_alert=True)
         await query.message.reply_text(
             f"📦 *Покупка успішна!*\n\n"
@@ -1867,6 +1892,11 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         if not ok:
             await _query_answer(query, "Користувача не знайдено", show_alert=True)
             return
+        
+        # 📊 Log admin ban action
+        log_admin_action('admin_action', admin_id=query.from_user.id, target_user_id=user_id,
+                        action_data={'action': 'ban_user'})
+        
         text, markup = _render_user_detail(user_id, page, query.from_user.id, dept_id)
         await _edit_message_text(query, text=f"🚫 Користувача забанено.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
@@ -1882,6 +1912,11 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         if not ok:
             await _query_answer(query, "Користувача не знайдено", show_alert=True)
             return
+        
+        # 📊 Log admin unban action
+        log_admin_action('admin_action', admin_id=query.from_user.id, target_user_id=user_id,
+                        action_data={'action': 'unban_user'})
+        
         text, markup = _render_user_detail(user_id, page, query.from_user.id, dept_id)
         await _edit_message_text(query, text=f"✅ Бан знято.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
@@ -1937,6 +1972,10 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         
         # Set the global role
         set_user_global_role(target_user_id, new_global_role)
+        
+        # 📊 Log admin role change action
+        log_admin_action('admin_action', admin_id=query.from_user.id, target_user_id=target_user_id,
+                        action_data={'action': 'set_global_role', 'role': new_global_role})
         
         # Refresh user detail (display roles for first department if any)
         user_depts = get_user_departments(target_user_id)
@@ -2213,6 +2252,20 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         if action == "approve":
             add_xp(sub["user_id"], task["xp_reward"])
+            
+            # 📊 Log task approval and XP award events
+            log_event('task_approved', user_id=sub["user_id"], admin_id=query.from_user.id, data={
+                'submission_id': sub_id,
+                'task_id': sub["task_id"],
+                'task_title': task.get('title', '')[:50],
+                'xp_awarded': task["xp_reward"]
+            })
+            log_event('xp_awarded', user_id=sub["user_id"], data={
+                'amount': task["xp_reward"],
+                'source': 'task_approval',
+                'task_id': sub["task_id"]
+            })
+            
             result_icon = "✅ Схвалено"
             user_msg = (
                 f"🎉 *Завдання підтверджено!*\n\n"
@@ -2221,6 +2274,13 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Переглянь профіль: /xp"
             )
         else:
+            # 📊 Log task rejection event
+            log_event('task_rejected', user_id=sub["user_id"], admin_id=query.from_user.id, data={
+                'submission_id': sub_id,
+                'task_id': sub["task_id"],
+                'task_title': task.get('title', '')[:50]
+            })
+            
             result_icon = "❌ Відхилено"
             user_msg = (
                 f"❌ *Завдання не прийнято*\n\n"
@@ -2278,6 +2338,14 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     sub_id = add_submission(user.id, task_id, proof_text, proof_file_id)
     ctx.user_data.pop("submitting_task_id", None)
+    
+    # 📊 Log task submission event
+    log_event('task_submitted', user_id=user.id, data={
+        'task_id': task_id,
+        'submission_id': sub_id,
+        'difficulty': task.get('difficulty', 'unknown'),
+        'title': task.get('title', '')[:50]
+    })
 
     await _reply(
         update,
@@ -2574,6 +2642,14 @@ async def verify_subscriptions_background_job(context: ContextTypes.DEFAULT_TYPE
 
 def main():
     init_db()
+    
+    # 📊 Log bot startup
+    from supervision import log_bot_startup
+    users_count = count_users()
+    depts_count = len(get_departments())
+    pending_submissions = len([s for s in get_unreviewed_ideas() or []])  # Approximate
+    log_bot_startup(users_count, depts_count, 0, 0)
+    
     app = Application.builder().token(BOT_TOKEN).build()
     
     # Add background job for weekly verification check

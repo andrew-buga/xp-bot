@@ -441,6 +441,26 @@ async def handle_language_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         await process_language_selection(update, ctx, lang)
 
 
+async def handle_change_language(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle language change button from main menu."""
+    query = update.callback_query
+    await _query_answer(query)
+    
+    user_id = query.from_user.id
+    logger.info(f"🌐 Користувач {user_id} натиснув кнопку зміни мови")
+    
+    await _edit_message_text(query,
+        get_message("lang_select", "uk"),
+        reply_markup=InlineKeyboardMarkup([
+            [
+                _btn(get_message("lang_en_btn", "en"), callback_data="lang_en"),
+                _btn(get_message("lang_ro_btn", "en"), callback_data="lang_ro"),
+                _btn(get_message("lang_uk_btn", "en"), callback_data="lang_uk"),
+            ]
+        ]),
+        parse_mode="Markdown")
+
+
 async def handle_verify_retry(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle 'Я вже підписаний' button - retry verification."""
     query = update.callback_query
@@ -740,7 +760,11 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         dept = get_department(db_user["department_id"])
         welcome_text = get_message("welcome_returning", lang, first_name=user.first_name or "друже",
                                    emoji=dept['emoji'], dept_name=dept['name'])
-        await _reply(update, welcome_text, parse_mode="Markdown")
+        # Меню з кнопкою зміни мови
+        markup = InlineKeyboardMarkup([
+            [_btn("🌐 Змінити мову", callback_data="change_lang")],
+        ])
+        await _reply(update, welcome_text, reply_markup=markup, parse_mode="Markdown")
         logger.info(f"✅ Користувач {user.id} повністю зареєстрований - показано привіт")
         return
     
@@ -2008,6 +2032,7 @@ def main():
 
     # Startup flow callbacks
     app.add_handler(CallbackQueryHandler(handle_language_button, pattern="^lang_"))
+    app.add_handler(CallbackQueryHandler(handle_change_language, pattern="^change_lang$"))
     app.add_handler(CallbackQueryHandler(handle_verify_retry, pattern="^verify_retry$"))
     app.add_handler(CallbackQueryHandler(handle_department_selection, pattern="^dept_"))
     app.add_handler(CallbackQueryHandler(handle_tasks_category, pattern="^tasks_"))

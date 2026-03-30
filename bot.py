@@ -75,6 +75,12 @@ from database import (
     has_user_department,
     set_user_role,
     get_user_role,
+    set_user_global_role,
+    get_user_global_role,
+    set_user_dept_role,
+    get_user_dept_role,
+    get_user_all_dept_roles,
+    get_dept_supervisors,
     is_supervisor_of_dept,
     DB_PATH,
 )
@@ -1312,21 +1318,55 @@ def _render_user_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 
-def _render_user_detail(target_user_id: int, page: int, admin_user_id: int | None = None) -> tuple[str, InlineKeyboardMarkup] | tuple[None, None]:
+def _select_user_dept_for_role(target_user_id: int, page: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Show department selection for editing user's department roles"""
+    user = get_user_summary(target_user_id)
+    user_depts = get_user_departments(target_user_id)
+    
+    lines = [
+        f"👤 *Редагування ролей {_display_name(user)}*",
+        "",
+        "Выберіть департамент для редагування ролі:",
+    ]
+    
+    rows = []
+    if user_depts:
+        for dept_id in user_depts:
+            dept = get_department(dept_id)
+            dept_role = get_user_dept_role(target_user_id, dept_id)
+            role_emoji = {"supervisor": "📋", "coordinator": "⭐", "helper": "🌱", "member": "👤"}.get(dept_role, "👤")
+            rows.append([_btn(f"{dept['emoji']} {dept['name']} {role_emoji}", callback_data=f"a:ud:{target_user_id}:{page}:d{dept_id}")])
+    else:
+        lines.append("_Користувач не належить до жодного департаменту._")
+    
+    rows.append([_btn("⬅ До списку", callback_data=f"a:users:{page}")])
+    
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
+def _render_user_detail(target_user_id: int, page: int, admin_user_id: int | None = None, dept_id: int | None = None) -> tuple[str, InlineKeyboardMarkup] | tuple[None, None]:
+    """Render user detail card with department roles
+    
+    Args:
+        target_user_id: User being viewed
+        page: Page number (for navigation back)
+        admin_user_id: User viewing (to prevent self-modifications)
+        dept_id: If specified, show only roles for this department and allow editing
+    """
     user = get_user_summary(target_user_id)
     if not user:
         return None, None
 
     status = "banned" if user["is_banned"] else "active"
-    role = get_user_role(target_user_id) or "user"
+    global_role = get_user_global_role(target_user_id) or "user"
     
-    # Format role display
-    role_emoji = {"admin": "👑", "supervisor": "📋", "user": "👤"}.get(role, "❓")
-    role_text = {
+    # Format global role display
+    global_role_emoji = {"admin": "👑", "it_admin": "🔧", "user": "👤"}.get(global_role, "❓")
+    global_role_text = {
         "admin": "Адміністратор",
-        "supervisor": "Куратор команди",
+        "it_admin": "IT-супериор",
         "user": "Користувач"
-    }.get(role, "Невідомо")
+    }.get(global_role, "Невідомо")
     
     lines = [
         "👤 *Картка користувача*",
@@ -1337,8 +1377,27 @@ def _render_user_detail(target_user_id: int, page: int, admin_user_id: int | Non
         f"🏆 Загальний XP: {user['total_xp']}",
         f"💰 Доступний XP: {user['spendable_xp']}",
         f"Status: *{status}*",
-        f"{role_emoji} Роль: *{role_text}*",
+        f"{global_role_emoji} Глобальна роль: *{global_role_text}*",
+        "",
     ]
+    
+    # Show department roles
+    dept_roles = get_user_all_dept_roles(target_user_id)
+    if dept_roles:
+        lines.append("*Ролі в департаментах:*")
+        for d_id in sorted(dept_roles.keys()):
+            d_role = dept_roles[d_id]
+            dept = get_department(d_id)
+            role_emoji = {"supervisor": "📋", "coordinator": "⭐", "helper": "🌱", "member": "👤"}.get(d_role, "❓")
+            role_text = {
+                "supervisor": "Супервайзер",
+                "coordinator": "Координатор",
+                "helper": "Хелпер",
+                "member": "Учасник"
+            }.get(d_role, "Невідомо")
+            lines.append(f"  {dept['emoji']} {dept['name']}: {role_emoji} {role_text}")
+    else:
+        lines.append("_Немає ролей в департаментах._")
 
     rows = []
     
@@ -1349,20 +1408,34 @@ def _render_user_detail(target_user_id: int, page: int, admin_user_id: int | Non
         action_btn = _btn("🚫 Ban", callback_data=f"a:ban:{user['user_id']}:{page}")
     rows.append([action_btn])
     
-    # Role change buttons (only if viewing a different user)
-    if admin_user_id is None or target_user_id != admin_user_id:
-        role_buttons = []
-        if role != "user":
-            role_buttons.append(_btn("👤 User", callback_data=f"a:urole:{user['user_id']}:user:{page}"))
-        if role != "supervisor":
-            role_buttons.append(_btn("📋 Supervisor", callback_data=f"a:urole:{user['user_id']}:supervisor:{page}"))
-        if role != "admin":
-            role_buttons.append(_btn("👑 Admin", callback_data=f"a:urole:{user['user_id']}:admin:{page}"))
+    # If viewing specific department, show role buttons for that department
+    if dept_id is not None:
+        current_dept_role = get_user_dept_role(target_user_id, dept_id)
+        dept = get_department(dept_id)
         
-        if role_buttons:
-            rows.append(role_buttons)
+        lines.append(f"\n*Роль у {dept['emoji']} {dept['name']}:*")
+        
+        # Role buttons for this department (only if viewing a different user)
+        if admin_user_id is None or target_user_id != admin_user_id:
+            dept_role_buttons = []
+            role_options = ["supervisor", "coordinator", "helper", "member"]
+            for opt_role in role_options:
+                if current_dept_role != opt_role:
+                    role_emoji = {"supervisor": "📋", "coordinator": "⭐", "helper": "🌱", "member": "👤"}[opt_role]
+                    role_text = {
+                        "supervisor": "Супервайзер",
+                        "coordinator": "Координатор",
+                        "helper": "Хелпер",
+                        "member": "Учасник"
+                    }[opt_role]
+                    dept_role_buttons.append(_btn(f"{role_emoji} {role_text}", callback_data=f"a:udrole:{target_user_id}:{dept_id}:{opt_role}:{page}"))
+            
+            if dept_role_buttons:
+                rows.append(dept_role_buttons)
     
-    rows.append([_btn("⬅ До списку", callback_data=f"a:users:{page}")])
+    # Back button  
+    backend_callback = f"a:users:{page}:d{dept_id}" if dept_id else f"a:users:{page}"
+    rows.append([_btn("⬅ До списку", callback_data=backend_callback)])
 
     markup = InlineKeyboardMarkup(rows)
     return "\n".join(lines), markup
@@ -1714,7 +1787,22 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         dept_filter = parts[4] if len(parts) > 4 else None
         dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
         
-        text, markup = _render_user_detail(user_id, page, query.from_user.id)
+        # If no department specified, show department selection
+        if dept_id is None:
+            user_depts = get_user_departments(user_id)
+            if not user_depts:
+                # No departments for this user
+                text, markup = _render_user_detail(user_id, page, query.from_user.id, None)
+            elif len(user_depts) == 1:
+                # Only one department, show its role directly
+                text, markup = _render_user_detail(user_id, page, query.from_user.id, user_depts[0])
+            else:
+                # Multiple departments, show selection
+                text, markup = _select_user_dept_for_role(user_id, page)
+        else:
+            # Department specified, show user detail for that department
+            text, markup = _render_user_detail(user_id, page, query.from_user.id, dept_id)
+        
         if not text:
             await _query_answer(query, "Користувача не знайдено", show_alert=True)
             return
@@ -1735,7 +1823,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         if not ok:
             await _query_answer(query, "Користувача не знайдено", show_alert=True)
             return
-        text, markup = _render_user_detail(user_id, page, query.from_user.id)
+        text, markup = _render_user_detail(user_id, page, query.from_user.id, dept_id)
         await _edit_message_text(query, text=f"🚫 Користувача забанено.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
@@ -1750,28 +1838,76 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         if not ok:
             await _query_answer(query, "Користувача не знайдено", show_alert=True)
             return
-        text, markup = _render_user_detail(user_id, page, query.from_user.id)
+        text, markup = _render_user_detail(user_id, page, query.from_user.id, dept_id)
         await _edit_message_text(query, text=f"✅ Бан знято.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
-    if data.startswith("a:urole:"):
+    if data.startswith("a:udrole:"):
+        # Department role change: a:udrole:user_id:dept_id:new_role:page
         parts = data.split(":")
         target_user_id = int(parts[2])
-        new_role = parts[3]
-        page = int(parts[4]) if len(parts) > 4 else 0
+        dept_id = int(parts[3])
+        new_dept_role = parts[4]
+        page = int(parts[5]) if len(parts) > 5 else 0
         
-        # Validate role
-        if new_role not in ["user", "supervisor", "admin"]:
+        # Validate department role
+        if new_dept_role not in ["supervisor", "coordinator", "helper", "member"]:
             await _query_answer(query, "❌ Невідома роль", show_alert=True)
             return
         
-        # Set the role
-        set_user_role(target_user_id, new_role)
+        # Set the department role
+        set_user_dept_role(target_user_id, dept_id, new_dept_role)
         
         # Refresh user detail
-        text, markup = _render_user_detail(target_user_id, page, query.from_user.id)
-        role_display = {"admin": "Адміністратор", "supervisor": "Куратор команди", "user": "Користувач"}[new_role]
-        await _edit_message_text(query, text=f"✅ Роль змінена на: *{role_display}*\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        text, markup = _render_user_detail(target_user_id, page, query.from_user.id, dept_id)
+        dept = get_department(dept_id)
+        role_emoji = {"supervisor": "📋", "coordinator": "⭐", "helper": "🌱", "member": "👤"}[new_dept_role]
+        role_display = {
+            "supervisor": "Супервайзер",
+            "coordinator": "Координатор",
+            "helper": "Хелпер",
+            "member": "Учасник"
+        }[new_dept_role]
+        await _edit_message_text(query, text=f"✅ {role_emoji} Роль змінена на: *{role_display}* у {dept['emoji']} {dept['name']}\n\n{text}", 
+                                reply_markup=markup, parse_mode="Markdown")
+        logger.debug(f"User {target_user_id} role changed to {new_dept_role} in dept {dept_id}")
+        return
+
+    if data.startswith("a:urole:"):
+        # Global role change: a:urole:user_id:new_role:page
+        parts = data.split(":")
+        target_user_id = int(parts[2])
+        new_global_role = parts[3]
+        page = int(parts[4]) if len(parts) > 4 else 0
+        
+        # Validate global role (only admin can set it_admin)
+        if new_global_role not in ["user", "admin", "it_admin"]:
+            await _query_answer(query, "❌ Невідома роль", show_alert=True)
+            return
+        
+        # Only IT-admins can assign IT-admin role
+        admin_global_role = get_user_global_role(query.from_user.id)
+        if new_global_role == "it_admin" and admin_global_role != "it_admin":
+            await _query_answer(query, "❌ Тільки IT-супериор може назначити IT-супериора", show_alert=True)
+            return
+        
+        # Set the global role
+        set_user_global_role(target_user_id, new_global_role)
+        
+        # Refresh user detail (display roles for first department if any)
+        user_depts = get_user_departments(target_user_id)
+        dept_id = user_depts[0] if user_depts else None
+        text, markup = _render_user_detail(target_user_id, page, query.from_user.id, dept_id)
+        
+        role_emoji = {"admin": "👑", "it_admin": "🔧", "user": "👤"}[new_global_role]
+        role_display = {
+            "admin": "Адміністратор",
+            "it_admin": "IT-супериор",
+            "user": "Користувач"
+        }[new_global_role]
+        await _edit_message_text(query, text=f"✅ {role_emoji} Глобальна роль змінена на: *{role_display}*\n\n{text}", 
+                                reply_markup=markup, parse_mode="Markdown")
+        logger.debug(f"User {target_user_id} global role changed to {new_global_role}")
         return
 
     if data.startswith("a:ideas:"):

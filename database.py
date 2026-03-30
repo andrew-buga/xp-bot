@@ -197,6 +197,19 @@ def init_db():
         c.execute("UPDATE ideas SET status='reviewed' WHERE is_reviewed=1")
         c.execute("UPDATE ideas SET status='new' WHERE is_reviewed=0")
 
+    # ============ USERS_DEPARTMENTS TABLE (DEPARTMENT ROLES) ============
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS users_departments (
+            user_id INTEGER NOT NULL,
+            department_id INTEGER NOT NULL,
+            dept_role TEXT DEFAULT 'member',
+            joined_at TEXT,
+            PRIMARY KEY (user_id, department_id),
+            FOREIGN KEY(user_id) REFERENCES users(user_id),
+            FOREIGN KEY(department_id) REFERENCES departments(id)
+        )
+    """)
+
     # ============ INSERT 60+ TASKS IF TABLE IS EMPTY ============
     c.execute("SELECT COUNT(*) FROM tasks")
     if c.fetchone()[0] == 0:
@@ -562,11 +575,11 @@ def has_user_department(user_id, dept_id):
     return dept_id in depts
 
 
-# ============ ROLE SYSTEM ============
+# ============ ROLE SYSTEM (GLOBAL) ============
 
-def set_user_role(user_id, role):
-    """Set user role: 'user', 'supervisor', 'admin'"""
-    if role not in ('user', 'supervisor', 'admin'):
+def set_user_global_role(user_id, role):
+    """Set global user role: 'user', 'admin', 'it_admin'"""
+    if role not in ('user', 'admin', 'it_admin'):
         raise ValueError(f"Invalid role: {role}")
     
     conn = get_conn()
@@ -576,8 +589,8 @@ def set_user_role(user_id, role):
     conn.close()
 
 
-def get_user_role(user_id):
-    """Get user role ('user', 'supervisor', or 'admin')"""
+def get_user_global_role(user_id):
+    """Get global user role ('user', 'admin', or 'it_admin')"""
     conn = get_conn()
     c = conn.cursor()
     c.execute("SELECT role FROM users WHERE user_id=?", (user_id,))
@@ -587,14 +600,87 @@ def get_user_role(user_id):
     return row['role'] if row and row['role'] else 'user'
 
 
+# Backward compatibility
+def set_user_role(user_id, role):
+    """Deprecated: use set_user_global_role instead"""
+    set_user_global_role(user_id, role)
+
+
+def get_user_role(user_id):
+    """Deprecated: use get_user_global_role instead"""
+    return get_user_global_role(user_id)
+
+
+# ============ DEPARTMENT ROLE SYSTEM ============
+
+def set_user_dept_role(user_id, dept_id, dept_role):
+    """Set user's role in specific department: 'supervisor', 'coordinator', 'helper', 'member'"""
+    if dept_role not in ('supervisor', 'coordinator', 'helper', 'member'):
+        raise ValueError(f"Invalid department role: {dept_role}")
+    
+    conn = get_conn()
+    c = conn.cursor()
+    
+    # Ensure user is in this department
+    if not has_user_department(user_id, dept_id):
+        add_user_department(user_id, dept_id)
+    
+    joined_at = datetime.now().isoformat()
+    c.execute(
+        """INSERT OR REPLACE INTO users_departments 
+           (user_id, department_id, dept_role, joined_at) 
+           VALUES (?, ?, ?, ?)""",
+        (user_id, dept_id, dept_role, joined_at)
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_user_dept_role(user_id, dept_id):
+    """Get user's role in specific department (default: 'member')"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT dept_role FROM users_departments WHERE user_id=? AND department_id=?",
+        (user_id, dept_id)
+    )
+    row = c.fetchone()
+    conn.close()
+    
+    return row['dept_role'] if row and row['dept_role'] else 'member'
+
+
+def get_user_all_dept_roles(user_id):
+    """Get all department roles for a user: {dept_id: dept_role}"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT department_id, dept_role FROM users_departments WHERE user_id=?",
+        (user_id,)
+    )
+    rows = c.fetchall()
+    conn.close()
+    
+    return {row['department_id']: row['dept_role'] for row in rows}
+
+
+def get_dept_supervisors(dept_id):
+    """Get all supervisors of a department"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT user_id FROM users_departments WHERE department_id=? AND dept_role='supervisor'",
+        (dept_id,)
+    )
+    rows = c.fetchall()
+    conn.close()
+    
+    return [row['user_id'] for row in rows]
+
+
 def is_supervisor_of_dept(user_id, dept_id):
     """Check if user is supervisor of specific department"""
-    role = get_user_role(user_id)
-    if role != 'supervisor':
-        return False
-    
-    # Check if user supervises this department
-    return has_user_department(user_id, dept_id)
+    return get_user_dept_role(user_id, dept_id) == 'supervisor'
 
 
 def mark_verified(user_id):

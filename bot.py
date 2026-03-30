@@ -267,6 +267,32 @@ def admin_only(func):
     return wrapper
 
 
+def admin_with_dept_check(func):
+    """Decorator to require admin status AND department selection.
+    Ensures admin is logged in and has a department assigned."""
+    @wraps(func)
+    async def wrapper(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        if not _is_admin(update):
+            await _reply(update, "❌ Тільки для адміністраторів!")
+            return
+        
+        user = update.effective_user
+        db_user = get_user(user.id)
+        
+        if not db_user or not db_user.get("department_id"):
+            await _reply(update,
+                "❌ Адмін повинен мати обраний відділ. Напиши /start",
+                parse_mode="Markdown")
+            return
+        
+        # Store department context for use in the handler
+        ctx.user_data["admin_dept_id"] = db_user["department_id"]
+        
+        return await func(update, ctx)
+    
+    return wrapper
+
+
 # ========== STARTUP FLOW DECORATORS & FUNCTIONS ==========
 
 def requires_dept_and_verified(func):
@@ -616,14 +642,20 @@ async def cmd_editproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _reply(update, "❌ Формат: /editproduct <product_id> <ціна> <назва> <опис>")
 
 
-def _admin_menu_markup() -> InlineKeyboardMarkup:
+def _admin_menu_markup(dept_id: int | None = None) -> InlineKeyboardMarkup:
+    """Build admin menu. If dept_id provided, shows dept-specific options."""
+    dept_info = ""
+    if dept_id:
+        dept = get_department(dept_id)
+        dept_info = f"\n📍 Відділ: {dept['emoji']} {dept['name']}"
+    
     return InlineKeyboardMarkup(
         [
-            [_btn("➕ Додати завдання", callback_data="a:add")],
-            [_btn("🗑 Видалити завдання", callback_data="a:dellist:0")],
-            [_btn("👥 Користувачі", callback_data="a:users:0")],
-            [_btn("🎁 Нарахувати XP", callback_data="a:xp")],
-            [_btn("📊 Статистика", callback_data="a:stats")],
+            [_btn("➕ Додати завдання", callback_data=f"a:add:{dept_id or 'g'}")],
+            [_btn("🗑 Видалити завдання", callback_data=f"a:dellist:0:{f'd{dept_id}' if dept_id else 'g'}")],
+            [_btn("👥 Користувачі", callback_data=f"a:users:0:{f'd{dept_id}' if dept_id else 'g'}")],
+            [_btn("🎁 Нарахувати XP", callback_data=f"a:xp:{dept_id or 'g'}")],
+            [_btn("📊 Статистика", callback_data=f"a:stats:{dept_id or 'g'}")],
             [_btn("🛒 Магазин товарів", callback_data="a:shop_list")],
             [_btn("🧩 Редагувати інфо бота", callback_data="be:menu")],
         ]
@@ -861,11 +893,17 @@ async def cmd_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _reply(update, "Немає активної дії для скасування.")
 
 
-@admin_only
+@admin_with_dept_check
 @rate_limit_user
 async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _clear_wizard(ctx)
-    await _reply(update, "🛠 *Адмін-панель*", reply_markup=_admin_menu_markup(), parse_mode="Markdown")
+    dept_id = ctx.user_data.get("admin_dept_id")
+    await _reply(
+        update,
+        "🛠 *Адмін-панель*",
+        reply_markup=_admin_menu_markup(dept_id),
+        parse_mode="Markdown"
+    )
 
 
 @admin_only
@@ -882,9 +920,12 @@ async def cmd_help_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         update,
         (
             "🛠 *Admin Help*\n\n"
-            "`/admin` — відкрити адмін-меню (кнопки).\n"
+            "`/admin` — відкрити адмін-меню (потребує обраного відділу).\n"
             "`/bot_infoedit` — змінити тексти /start і /help.\n"
             "`/help_admin` — ця довідка.\n\n"
+            "*Важливо:*\n"
+            "Адміністратори повинні мати обраний відділ для доступу до адмін-панелі.\n"
+            "Напиши /start щоб обрати свій відділ.\n\n"
             "*Legacy команди:*\n"
             "`/addtask <XP> <назва> | <опис>` — додати задачу.\n"
             "`/deltask <task_id>` — деактивувати задачу.\n"
@@ -894,7 +935,9 @@ async def cmd_help_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "*В адмін-меню також є:*\n"
             "• Керування користувачами (перегляд, ban/unban)\n"
             "• Покрокове додавання задач\n"
-            "• Покрокове нарахування XP"
+            "• Покрокове нарахування XP\n"
+            "• Статистика по відділам\n"
+            "• Управління магазином товарів"
         ),
         parse_mode="Markdown",
     )
@@ -1083,6 +1126,96 @@ def _render_shop_admin() -> tuple[str, InlineKeyboardMarkup]:
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 
+def _render_user_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Render user page filtered by department."""
+    # Get all users then filter by department
+    all_users = list_users(limit=10000)  # Get all for filtering
+    dept_users = [u for u in all_users if u.get("department_id") == dept_id]
+    
+    total = len(dept_users)
+    total_pages = max(1, (total + ADMIN_USERS_PAGE_SIZE - 1) // ADMIN_USERS_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    
+    start = page * ADMIN_USERS_PAGE_SIZE
+    chunk = dept_users[start : start + ADMIN_USERS_PAGE_SIZE]
+    
+    dept = get_department(dept_id)
+    dept_name = f"{dept['emoji']} {dept['name']}" if dept else "Невідомий відділ"
+    
+    lines = [f"👥 *Користувачі {dept_name}* (сторінка {page + 1}/{total_pages})", ""]
+    rows = []
+
+    if not chunk:
+        lines.append("Немає користувачів у цьому відділі.")
+    else:
+        for user in chunk:
+            ban_mark = "🚫" if user["is_banned"] else ""
+            lines.append(
+                f"`{user['user_id']}` | {_display_name(user)} | 🏆 {user['total_xp']} XP | 💰 {user['spendable_xp']} XP {ban_mark}"
+            )
+            rows.append([_btn(f"Деталі {user['user_id']}", callback_data=f"a:ud:{user['user_id']}:{page}:d{dept_id}")])
+
+    nav = []
+    if page > 0:
+        nav.append(_btn("◀ Prev", callback_data=f"a:users:{page - 1}:d{dept_id}"))
+    if page < total_pages - 1:
+        nav.append(_btn("Next ▶", callback_data=f"a:users:{page + 1}:d{dept_id}"))
+    if nav:
+        rows.append(nav)
+    rows.append([_btn("⬅ В меню", callback_data="a:menu")])
+
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
+def _render_task_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Render task page filtered by department."""
+    # Get all tasks then filter by department
+    all_tasks = get_tasks()
+    dept_tasks = [t for t in all_tasks if t.get("department_id") == dept_id]
+    
+    total_pages = max(1, (len(dept_tasks) + ADMIN_TASKS_PAGE_SIZE - 1) // ADMIN_TASKS_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * ADMIN_TASKS_PAGE_SIZE
+    chunk = dept_tasks[start : start + ADMIN_TASKS_PAGE_SIZE]
+
+    dept = get_department(dept_id)
+    dept_name = f"{dept['emoji']} {dept['name']}" if dept else "Невідомий відділ"
+    
+    lines = [f"🗑 *Видалення завдань ({dept_name})*", "Натисни на завдання для деактивації.", ""]
+    rows = []
+
+    for task in chunk:
+        lines.append(f"#{task['id']} — {task['title']} ({task['xp_reward']} XP)")
+        rows.append(
+            [
+                _btn(
+                    f"Видалити #{task['id']}",
+                    callback_data=f"a:del:{task['id']}:{page}:d{dept_id}",
+                )
+            ]
+        )
+
+    nav = []
+    if page > 0:
+        nav.append(_btn("◀ Prev", callback_data=f"a:dellist:{page - 1}:d{dept_id}"))
+    if page < total_pages - 1:
+        nav.append(_btn("Next ▶", callback_data=f"a:dellist:{page + 1}:d{dept_id}"))
+    if nav:
+        rows.append(nav)
+    rows.append([_btn("⬅ В меню", callback_data="a:menu")])
+
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+            rows.append([
+                _btn(f"✏️ Ред.", callback_data=f"a:shop_edit:{p['id']}"),
+                _btn(toggle_icon, callback_data=f"a:shop_toggle:{p['id']}"),
+                _btn(f"🗑 Вид.", callback_data=f"a:shop_del:{p['id']}"),
+            ])
+
+    rows.append([_btn("➕ Додати товар", callback_data="a:shop_add")])
+    rows.append([_btn("⬅ В меню", callback_data="a:menu")])
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
 async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wizard_type: str):
     chat_id = update.effective_chat.id
     if wizard_type == "add_task":
@@ -1157,39 +1290,82 @@ async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wi
 async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
+    
+    # Extract department context from callback data (format: "a:action:page:d<dept_id>" or "a:action:d<dept_id>")
+    dept_id = None
+    parts = data.split(":")
+    for part in parts:
+        if part.startswith("d") and part[1:].isdigit():
+            dept_id = int(part[1:])
+            break
 
     if data == "a:menu":
         _clear_wizard(ctx)
-        await _edit_message_text(query, "🛠 *Адмін-панель*", reply_markup=_admin_menu_markup(), parse_mode="Markdown")
+        # Use stored dept_id from context or extracted from callback
+        if not dept_id and "admin_dept_id" in ctx.user_data:
+            dept_id = ctx.user_data["admin_dept_id"]
+        await _edit_message_text(query, "🛠 *Адмін-панель*", reply_markup=_admin_menu_markup(dept_id), parse_mode="Markdown")
         return
 
-    if data == "a:add":
-        await _start_admin_wizard(update, ctx, "add_task")
+    if data.startswith("a:add:"):
+        dept_filter = data.split(":", 2)[2]
+        dept_id = int(dept_filter[1:]) if dept_filter.startswith("d") else None
+        await _start_admin_wizard(update, ctx, f"add_task:{dept_id or ''}")
         await _query_answer(query, "Майстер додавання запущено")
         return
 
     if data.startswith("a:dellist:"):
-        page = int(data.split(":")[2])
-        text, markup = _render_task_page(page)
+        page_str = data.split(":")[2] if len(data.split(":")) > 2 else "0"
+        dept_filter = data.split(":")[3] if len(data.split(":")) > 3 else None
+        page = int(page_str)
+        dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
+        
+        if dept_id:
+            text, markup = _render_task_page_by_dept(dept_id, page)
+        else:
+            text, markup = _render_task_page(page)
         await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:del:"):
-        _, _, task_id_str, page_str = data.split(":")
-        delete_task(int(task_id_str))
-        text, markup = _render_task_page(int(page_str))
-        await _edit_message_text(query, text=f"✅ Завдання #{task_id_str} деактивовано.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        parts = data.split(":")
+        task_id = int(parts[2])
+        page = int(parts[3]) if len(parts) > 3 else 0
+        dept_filter = parts[4] if len(parts) > 4 else None
+        dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
+        
+        delete_task(task_id)
+        
+        if dept_id:
+            text, markup = _render_task_page_by_dept(dept_id, page)
+        else:
+            text, markup = _render_task_page(page)
+        
+        await _edit_message_text(query, text=f"✅ Завдання #{task_id} деактивовано.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:users:"):
-        page = int(data.split(":")[2])
-        text, markup = _render_user_page(page)
+        parts = data.split(":")
+        page = int(parts[2])
+        dept_filter = parts[3] if len(parts) > 3 else None
+        dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
+        
+        if dept_id:
+            text, markup = _render_user_page_by_dept(dept_id, page)
+        else:
+            text, markup = _render_user_page(page)
+        
         await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:ud:"):
-        _, _, user_id_str, page_str = data.split(":")
-        text, markup = _render_user_detail(int(user_id_str), int(page_str))
+        parts = data.split(":")
+        user_id = int(parts[2])
+        page = int(parts[3])
+        dept_filter = parts[4] if len(parts) > 4 else None
+        dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
+        
+        text, markup = _render_user_detail(user_id, page)
         if not text:
             await _query_answer(query, "Користувача не знайдено", show_alert=True)
             return
@@ -1197,33 +1373,51 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         return
 
     if data.startswith("a:ban:"):
-        _, _, user_id_str, page_str = data.split(":")
-        if int(user_id_str) == query.from_user.id:
+        parts = data.split(":")
+        user_id = int(parts[2])
+        page = int(parts[3])
+        dept_filter = parts[4] if len(parts) > 4 else None
+        dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
+        
+        if user_id == query.from_user.id:
             await _query_answer(query, "Не можна забанити самого себе.", show_alert=True)
             return
-        ok = ban_user(int(user_id_str))
+        ok = ban_user(user_id)
         if not ok:
             await _query_answer(query, "Користувача не знайдено", show_alert=True)
             return
-        text, markup = _render_user_detail(int(user_id_str), int(page_str))
+        text, markup = _render_user_detail(user_id, page)
         await _edit_message_text(query, text=f"🚫 Користувача забанено.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:unban:"):
-        _, _, user_id_str, page_str = data.split(":")
-        ok = unban_user(int(user_id_str))
+        parts = data.split(":")
+        user_id = int(parts[2])
+        page = int(parts[3])
+        dept_filter = parts[4] if len(parts) > 4 else None
+        dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
+        
+        ok = unban_user(user_id)
         if not ok:
             await _query_answer(query, "Користувача не знайдено", show_alert=True)
             return
-        text, markup = _render_user_detail(int(user_id_str), int(page_str))
+        text, markup = _render_user_detail(user_id, page)
         await _edit_message_text(query, text=f"✅ Бан знято.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
-    if data == "a:stats":
+    if data.startswith("a:stats:"):
+        dept_filter = data.split(":")[2] if len(data.split(":")) > 2 else None
+        dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
+        
         users, tasks, pending, approved = get_stats()
+        dept_label = ""
+        if dept_id:
+            dept = get_department(dept_id)
+            dept_label = f" ({dept['emoji']} {dept['name']})"
+        
         await _edit_message_text(query, 
             text=(
-                "📊 *Статистика*\n\n"
+                f"📊 *Статистика{dept_label}*\n\n"
                 f"👥 Користувачів: {users}\n"
                 f"📋 Активних завдань: {tasks}\n"
                 f"⏳ На перевірці: {pending}\n"
@@ -1234,8 +1428,11 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         )
         return
 
-    if data == "a:xp":
-        await _start_admin_wizard(update, ctx, "give_xp")
+    if data.startswith("a:xp:"):
+        dept_filter = data.split(":")[2] if len(data.split(":")) > 2 else None
+        dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
+        
+        await _start_admin_wizard(update, ctx, f"give_xp:{dept_id or ''}")
         await _query_answer(query, "Майстер нарахування XP запущено")
         return
 

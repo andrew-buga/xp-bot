@@ -2,8 +2,9 @@
 import time
 from collections import defaultdict, deque
 from functools import wraps
+from datetime import datetime, timedelta
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, ChatMember
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -11,9 +12,11 @@ from telegram.ext import (
     ContextTypes,
     MessageHandler,
     filters,
+    JobQueue,
 )
 
-from config import ADMIN_IDS, BOT_TOKEN
+from config import ADMIN_IDS, BOT_TOKEN, TELEGRAM_CHANNEL_ID
+from messages import get_message
 from database import (
     admin_subtract_xp,
     add_submission,
@@ -27,9 +30,15 @@ from database import (
     get_submission,
     get_task,
     get_tasks,
+    get_tasks_by_difficulty,
+    get_tasks_filtered,
     get_user,
     get_user_rank,
     get_user_summary,
+    get_user_language,
+    set_user_language,
+    get_user_department,
+    select_department,
     get_setting,
     has_approved,
     has_pending,
@@ -48,6 +57,14 @@ from database import (
     spend_xp,
     add_to_inventory,
     get_inventory,
+    get_departments,
+    get_department,
+    mark_verified,
+    mark_unverified,
+    get_users_needing_recheck,
+    add_idea,
+    get_unreviewed_ideas,
+    mark_idea_reviewed,
 )
 
 
@@ -250,45 +267,274 @@ def admin_only(func):
     return wrapper
 
 
-# ---------- Shop ----------
+# ========== STARTUP FLOW DECORATORS & FUNCTIONS ==========
+
+def requires_dept_and_verified(func):
+    """Decorator to require user to have department selected and be verified.
+    Redirects to /start if not."""
+    @wraps(func)
+    async def wrapper(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        user = update.effective_user
+        if not user:
+            return
+        
+        db_user = get_user(user.id)
+        if not db_user:
+            await _reply(update, "❌ Помилка: користувач не знайдено. Спробуй /start")
+            return
+        
+        # Check if user has department selected
+        if not db_user.get("department_id"):
+            await _reply(update, 
+                "❌ Спочатку обери свій департамент. Напиши /start",
+                parse_mode="Markdown")
+            return
+        
+        # Check if user is verified (but don't block - just warn)
+        if not db_user.get("is_verified"):
+            # Show friendly reminder but don't block
+            reminder_text = (
+                "ℹ️ Помітили, що ти не підписаний на наш канал!\n\n"
+                "📱 Підпишись на @aturinfo, щоб не пропустити важливе.\n\n"
+                "Але можеш продовжити роботити 😊"
+            )
+            await _reply(update, reminder_text)
+        
+        return await func(update, ctx)
+    
+    return wrapper
+
+
+async def check_channel_subscription(bot, user_id: int, channel_id: int) -> bool:
+    """Check if user is subscribed to channel. Returns True if subscribed."""
+    try:
+        member = await bot.get_chat_member(channel_id, user_id)
+        # Check if user is member (not restricted/kicked/left)
+        return member.status in ["member", "administrator", "creator", "restricted"]
+    except Exception as e:
+        logger.warning(f"Failed to check subscription for user {user_id}: {e}")
+        return False
+
+
+async def process_language_selection(update: Update, ctx: ContextTypes.DEFAULT_TYPE, lang: str):
+    """Handle language selection and move to verification."""
+    user = update.effective_user
+    set_user_language(user.id, lang)
+    
+    await _reply(update,
+        get_message("lang_selected", lang),
+        parse_mode="Markdown")
+    
+    # Move to verification
+    await process_subscription_verification(update, ctx)
+
+
+async def process_subscription_verification(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Check if user is subscribed to channel, and move to department selection if yes."""
+    user = update.effective_user
+    lang = get_user_language(user.id)
+    
+    is_subscribed = await check_channel_subscription(ctx.bot, user.id, TELEGRAM_CHANNEL_ID)
+    
+    if is_subscribed:
+        mark_verified(user.id)
+        await _reply(update,
+            get_message("verify_subscribed", lang),
+            parse_mode="Markdown")
+        await show_department_selection(update)
+    else:
+        # Show subscription request
+        await _reply(update,
+            get_message("verify_not_subscribed", lang, first_name=user.first_name or "friend"),
+            reply_markup=InlineKeyboardMarkup([[
+                _btn(get_message("verify_btn", lang), callback_data="verify_retry")
+            ]]),
+            parse_mode="Markdown")
+
+
+async def show_department_selection(update: Update):
+    """Display department selection buttons."""
+    user = update.effective_user
+    lang = get_user_language(user.id)
+    departments = get_departments()
+    
+    rows = []
+    for dept in departments:
+        rows.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"dept_{dept['id']}")])
+    
+    back_text = "⬅ Back" if lang == "en" else "⬅ Înapoi" if lang == "ro" else "⬅ Назад"
+    rows.append([_btn(back_text, callback_data="lang_select")])
+    
+    await _reply(update,
+        get_message("dept_select", lang),
+        reply_markup=InlineKeyboardMarkup(rows),
+        parse_mode="Markdown")
+
+
+async def show_language_selection(update: Update):
+    """Display language selection buttons."""
+    markup = InlineKeyboardMarkup([
+        [
+            _btn(get_message("lang_en_btn", "en"), callback_data="lang_en"),
+            _btn(get_message("lang_ro_btn", "en"), callback_data="lang_ro"),
+            _btn(get_message("lang_uk_btn", "en"), callback_data="lang_uk"),
+        ]
+    ])
+    
+    await _reply(update,
+        get_message("lang_select", "uk"),
+        reply_markup=markup,
+        parse_mode="Markdown")
+
+
+# ========== STARTUP CALLBACKS ==========
+
+async def handle_language_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle language selection button press."""
+    query = update.callback_query
+    await _query_answer(query)
+    
+    if query.data == "lang_select":
+        await show_language_selection(update)
+        return
+    
+    lang_map = {
+        "lang_en": "en",
+        "lang_ro": "ro",
+        "lang_uk": "uk",
+    }
+    
+    lang = lang_map.get(query.data)
+    if lang:
+        await process_language_selection(update, ctx, lang)
+
+
+async def handle_verify_retry(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle 'Я вже підписаний' button - retry verification."""
+    query = update.callback_query
+    await _query_answer(query)
+    
+    await _edit_message_text(query,
+        "⏳ *Перевіряю підписку...*",
+        parse_mode="Markdown")
+    
+    await process_subscription_verification(update, ctx)
+
+
+async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle department selection."""
+    query = update.callback_query
+    await _query_answer(query)
+    
+    data = query.data
+    if not data.startswith("dept_"):
+        return
+    
+    try:
+        dept_id = int(data.split("_")[1])
+    except (IndexError, ValueError):
+        await _query_answer(query, "❌ Помилка вибору. Спробуй ще раз.", show_alert=True)
+        return
+    
+    user = query.from_user
+    dept = get_department(dept_id)
+    lang = get_user_language(user.id)
+    
+    if not dept:
+        await _query_answer(query, "❌ Департамент не знайдено.", show_alert=True)
+        return
+    
+    select_department(user.id, dept_id)
+    
+    await _edit_message_text(query,
+        get_message("dept_welcome", lang, first_name=user.first_name or "друже", 
+                   emoji=dept['emoji'], dept_name=dept['name']),
+        parse_mode="Markdown")
+
 
 @rate_limit_user
 async def cmd_shop(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Shop - placeholder for now"""
     user = update.effective_user
     register_user(user)
-    products = list_products()
-    if not products:
-        await _reply(update, "🛒 Магазин порожній. Зазирни пізніше!")
-        return
-    db_user = get_user(user.id)
-    await _reply(
-        update,
-        f"🛒 *Магазин нагород*\n💰 Твій баланс: *{db_user['spendable_xp']} XP*",
-        parse_mode="Markdown",
-    )
-    for product in products:
-        text = (
-            f"🎁 *{product['name']}*\n"
-            f"{product['description']}\n"
-            f"💸 Ціна: *{product['price']} XP*"
-        )
-        btn = _btn("🛎️ Купити", callback_data=f"shop_buy_{product['id']}")
-        await _reply(update, text, reply_markup=InlineKeyboardMarkup([[btn]]), parse_mode="Markdown")
+    lang = get_user_language(user.id)
+    
+    await _reply(update,
+        get_message("shop_placeholder", lang),
+        parse_mode="Markdown")
 
 
 @rate_limit_user
 async def cmd_inventory(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Inventory - placeholder for now"""
     user = update.effective_user
     register_user(user)
-    items = get_inventory(user.id)
-    if not items:
-        await _reply(update, "📦 Твій інвентар порожній. Купуй щось у /shop ")
+    lang = get_user_language(user.id)
+    
+    await _reply(update,
+        get_message("inventory_placeholder", lang),
+        parse_mode="Markdown")
+
+
+@rate_limit_user
+async def cmd_achievements(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Achievements - placeholder"""
+    user = update.effective_user
+    register_user(user)
+    lang = get_user_language(user.id)
+    
+    await _reply(update,
+        get_message("achievements_placeholder", lang),
+        parse_mode="Markdown")
+
+
+@rate_limit_user
+@rate_limit_user
+async def cmd_idea(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Capture user idea submission"""
+    user = update.effective_user
+    register_user(user)
+    lang = get_user_language(user.id)
+    
+    ctx.user_data["submitting_idea"] = True
+    
+    await _reply(update,
+        get_message("idea_prompt", lang))
+
+
+async def handle_idea_submission(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle idea text input."""
+    if not ctx.user_data.get("submitting_idea"):
         return
-    lines = ["📦 *Мій інвентар*\n"]
-    for item in items:
-        date = item["bought_at"][:10]
-        lines.append(f"🎁 {item['product_name']} — {item['price_paid']} XP ({date})")
-    await _reply(update, "\n".join(lines), parse_mode="Markdown")
+    
+    user = update.effective_user
+    lang = get_user_language(user.id)
+    text = (update.message.text or "").strip()
+    
+    if not text:
+        await _reply(update, get_message("idea_empty", lang))
+        return
+    
+    ctx.user_data.pop("submitting_idea", None)
+    
+    add_idea(user.id, text)
+    
+    await _reply(update,
+        get_message("idea_submitted", lang, idea=text[:100]),
+        parse_mode="Markdown")
+    
+    # Notify admins
+    admin_text = (
+        f"💡 *Нова ідея від {user.first_name or user.username or f'User{user.id}'}*\n\n"
+        f"Текст: \"{text}\""
+    )
+    
+    for admin_id in ADMIN_IDS:
+        try:
+            await ctx.bot.send_message(admin_id, _normalize_text(admin_text), parse_mode="Markdown")
+        except Exception as e:
+            logger.error(f"Failed to notify admin {admin_id}: {e}")
+
 
 
 async def handle_shop_buy(query, user_id, product_id):
@@ -442,10 +688,24 @@ async def _cleanup_wizard_prompts(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int) 
 
 @rate_limit_user
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """New startup flow: language → verification → department"""
     user = update.effective_user
     register_user(user)
-    text = _get_text_setting("welcome_text", first_name=user.first_name or "друже")
-    await _reply(update, text, parse_mode="Markdown")
+    
+    db_user = get_user(user.id)
+    lang = get_user_language(user.id)
+    
+    # Check if user already has department selected (fully registered)
+    if db_user.get("department_id"):
+        dept = get_department(db_user["department_id"])
+        welcome_text = get_message("welcome_returning", lang, first_name=user.first_name or "друже",
+                                   emoji=dept['emoji'], dept_name=dept['name'])
+        await _reply(update, welcome_text, parse_mode="Markdown")
+        return
+    
+    # New user or user without department - start the flow
+    await show_language_selection(update)
+
 
 
 @rate_limit_user
@@ -455,41 +715,103 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @rate_limit_user
 async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Show task categories (Easy/Medium/Hard) for user to select."""
     user = update.effective_user
     register_user(user)
-    tasks = get_tasks()
-
-    if not tasks:
-        await _reply(update, "😕 Наразі завдань немає. Зазирни пізніше!")
+    
+    db_user = get_user(user.id)
+    if not db_user.get("department_id"):
+        await _reply(update, "❌ Спочатку обери департамент через /start")
         return
+    
+    # Show category menu
+    markup = InlineKeyboardMarkup([
+        [_btn("📗 Легкі", callback_data="tasks_easy")],
+        [_btn("📙 Середні", callback_data="tasks_medium")],
+        [_btn("📕 Важкі", callback_data="tasks_hard")],
+    ])
+    
+    await _reply(update,
+        "📋 *Вибери складність завдань:*",
+        reply_markup=markup,
+        parse_mode="Markdown")
 
-    await _reply(update, "📋 *Список завдань:*", parse_mode="Markdown")
 
+async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle task category selection and display filtered tasks."""
+    query = update.callback_query
+    await _query_answer(query)
+    
+    user = query.from_user
+    data = query.data
+    
+    # Extract difficulty level
+    difficulty_map = {
+        "tasks_easy": "easy",
+        "tasks_medium": "medium",
+        "tasks_hard": "hard",
+    }
+    
+    difficulty = difficulty_map.get(data)
+    if not difficulty:
+        return
+    
+    db_user = get_user(user.id)
+    if not db_user or not db_user.get("department_id"):
+        await _query_answer(query, "❌ Обери департамент через /start", show_alert=True)
+        return
+    
+    # Get filtered tasks
+    user_dept_id = db_user["department_id"]
+    tasks = get_tasks_filtered(difficulty, user_dept_id)
+    
+    if not tasks:
+        await _edit_message_text(query,
+            f"😕 На жаль, завдань рівня «{difficulty}» немає.\n\n"
+            "Спробуй інший рівень складності!",
+            reply_markup=InlineKeyboardMarkup([
+                [_btn("📗 Легкі", callback_data="tasks_easy")],
+                [_btn("📙 Середні", callback_data="tasks_medium")],
+                [_btn("📕 Важкі", callback_data="tasks_hard")],
+            ]),
+            parse_mode="Markdown")
+        return
+    
+    # Display tasks
+    cat_names = {"easy": "Легкі", "medium": "Середні", "hard": "Важкі"}
+    await _edit_message_text(query,
+        f"📋 *{cat_names[difficulty]} завдання*\n\n"
+        f"Нижче показані завдання для твого департаменту.",
+        parse_mode="Markdown")
+    
     for task in tasks:
         done = has_approved(user.id, task["id"])
         pending = has_pending(user.id, task["id"])
-
+        
         if done:
             badge = " ✅"
         elif pending:
             badge = " ⏳"
         else:
             badge = ""
-
+        
         text = (
             f"📌 *{task['title']}*{badge}\n"
             f"{task['description']}\n"
             f"💎 Нагорода: *{task['xp_reward']} XP*"
         )
-
+        
         if done:
             btn = _btn("✅ Виконано", callback_data="noop")
         elif pending:
             btn = _btn("⏳ На перевірці", callback_data="noop")
         else:
             btn = _btn("📤 Здати завдання", callback_data=f"submit_{task['id']}")
+        
+        await _reply(update, text, 
+                    reply_markup=InlineKeyboardMarkup([[btn]]),
+                    parse_mode="Markdown")
 
-        await _reply(update, text, reply_markup=InlineKeyboardMarkup([[btn]]), parse_mode="Markdown")
 
 
 @rate_limit_user
@@ -1174,7 +1496,15 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @rate_limit_user
 async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle text input for wizards and ideas."""
     user = update.effective_user
+    
+    # Check if user is submitting an idea
+    if ctx.user_data.get("submitting_idea"):
+        await handle_idea_submission(update, ctx)
+        return
+    
+    # Handle admin wizards
     wizard = _wizard(ctx)
 
     if user and user.id in ADMIN_IDS and wizard:
@@ -1389,23 +1719,57 @@ async def handle_proof_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _process_proof(update, ctx)
 
 
+# ========== BACKGROUND JOBS ==========
+
+async def verify_subscriptions_background_job(context: ContextTypes.DEFAULT_TYPE):
+    """Weekly background job to check if verified users are still subscribed to channel."""
+    logger.info("🔄 Running weekly subscription verification check...")
+    
+    users_to_check = get_users_needing_recheck()
+    logger.info(f"Checking {len(users_to_check)} users for subscription status...")
+    
+    for user_id in users_to_check:
+        try:
+            is_subscribed = await check_channel_subscription(context.bot, user_id, TELEGRAM_CHANNEL_ID)
+            if not is_subscribed:
+                mark_unverified(user_id)
+                logger.info(f"User {user_id} unsubscribed - marked as unverified")
+        except Exception as e:
+            logger.error(f"Error checking subscription for user {user_id}: {e}")
+    
+    logger.info("✅ Weekly subscription check completed!")
+
+
 def main():
     init_db()
     app = Application.builder().token(BOT_TOKEN).build()
+    
+    # Add background job for weekly verification check
+    job_queue = app.job_queue
+    job_queue.run_repeating(verify_subscriptions_background_job, interval=3600*24*7, first=10)
+    
+    # Product commands
     app.add_handler(CommandHandler("addproduct", cmd_addproduct))
     app.add_handler(CommandHandler("delproduct", cmd_delproduct))
     app.add_handler(CommandHandler("editproduct", cmd_editproduct))
 
-
+    # Shop & Inventory
     app.add_handler(CommandHandler("shop", cmd_shop))
     app.add_handler(CommandHandler("inventory", cmd_inventory))
 
+    # Main commands
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("tasks", cmd_tasks))
     app.add_handler(CommandHandler("xp", cmd_xp))
     app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
+    
+    # New commands
+    app.add_handler(CommandHandler("idea", cmd_idea))
+    app.add_handler(CommandHandler("achievements", cmd_achievements))
+    
+    # Admin commands
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CommandHandler("bot_infoedit", cmd_bot_infoedit))
     app.add_handler(CommandHandler("help_admin", cmd_help_admin))
@@ -1415,14 +1779,25 @@ def main():
     app.add_handler(CommandHandler("givexp", cmd_givexp))
     app.add_handler(CommandHandler("stats", cmd_stats))
 
+    # Startup flow callbacks
+    app.add_handler(CallbackQueryHandler(handle_language_button, pattern="^lang_"))
+    app.add_handler(CallbackQueryHandler(handle_verify_retry, pattern="^verify_retry$"))
+    app.add_handler(CallbackQueryHandler(handle_department_selection, pattern="^dept_"))
+    app.add_handler(CallbackQueryHandler(handle_tasks_category, pattern="^tasks_"))
+    
+    # Shop & other callbacks
     app.add_handler(CallbackQueryHandler(shop_callback_handler, pattern="shop_buy_.*"))
+    
+    # Main buttons callback handler
     app.add_handler(CallbackQueryHandler(on_button))
 
+    # Text and media handlers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_proof_media))
 
     logger.info("🤖 Бот запущено!")
     app.run_polling()
+
 
 
 if __name__ == "__main__":

@@ -44,3 +44,4 @@ _load_local_dotenv()
 
 BOT_TOKEN = _require_env("BOT_TOKEN")
 ADMIN_IDS = _parse_admin_ids(_require_env("ADMIN_IDS"))
+TELEGRAM_CHANNEL_ID = -1002160969432  # @aturinfo channel ID

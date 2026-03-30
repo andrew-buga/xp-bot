@@ -28,10 +28,10 @@ def init_db():
             is_banned      INTEGER DEFAULT 0,
             banned_at      TEXT,
             language       TEXT DEFAULT 'uk',
-            department_id  INTEGER,
             is_verified    INTEGER DEFAULT 0,
             verified_at    TEXT,
-            needs_recheck  INTEGER DEFAULT 0
+            needs_recheck  INTEGER DEFAULT 0,
+            role           TEXT DEFAULT 'user'
         )
     """)
 
@@ -71,6 +71,17 @@ def init_db():
     
     if "role" not in user_columns:
         c.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+    
+    # ⚙️ MIGRATION: Remove deprecated department columns (safe - data in users_departments)
+    # Department assignment moved to users_departments table + migrations complete
+    if "department_id" in user_columns and "departments_json" in user_columns:
+        try:
+            # SQLite 3.35.0+: Safely drop deprecated columns
+            c.execute("ALTER TABLE users DROP COLUMN department_id")
+            c.execute("ALTER TABLE users DROP COLUMN departments_json")
+        except sqlite3.OperationalError:
+            # Older SQLite - columns exist but unused (non-critical)
+            pass
 
     # ============ DEPARTMENTS TABLE ============
     c.execute("""
@@ -537,24 +548,6 @@ def set_user_language(user_id, language):
     conn = get_conn()
     c = conn.cursor()
     c.execute("UPDATE users SET language=? WHERE user_id=?", (language, user_id))
-    conn.commit()
-    conn.close()
-
-
-def get_user_department(user_id):
-    """Get user's department_id"""
-    user = get_user(user_id)
-    return user["department_id"] if user else None
-
-
-def select_department(user_id, department_id):
-    """Assign user to department after verification"""
-    conn = get_conn()
-    c = conn.cursor()
-    c.execute(
-        "UPDATE users SET department_id=? WHERE user_id=?",
-        (department_id, user_id)
-    )
     conn.commit()
     conn.close()
 

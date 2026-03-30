@@ -38,8 +38,6 @@ from database import (
     get_user_summary,
     get_user_language,
     set_user_language,
-    get_user_department,
-    select_department,
     get_setting,
     has_approved,
     has_pending,
@@ -329,14 +327,15 @@ def admin_with_dept_check(func):
         user = update.effective_user
         db_user = get_user(user.id)
         
-        if not db_user or db_user["department_id"] is None:
+        user_depts = get_user_departments(user.id)
+        if not db_user or not user_depts:
             await _reply(update,
                 "❌ Адмін повинен мати обраний відділ. Напиши /start",
                 parse_mode="Markdown")
             return
         
         # Store department context for use in the handler
-        ctx.user_data["admin_dept_id"] = db_user["department_id"]
+        ctx.user_data["admin_dept_id"] = user_depts[0]
         
         return await func(update, ctx)
     
@@ -360,7 +359,8 @@ def requires_dept_and_verified(func):
             return
         
         # Check if user has department selected
-        if db_user["department_id"] is None:
+        user_depts = get_user_departments(user.id)
+        if not user_depts:
             await _reply(update, 
                 "❌ Спочатку обери свій департамент. Напиши /start",
                 parse_mode="Markdown")
@@ -1009,7 +1009,8 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     register_user(user)
     
     db_user = get_user(user.id)
-    if db_user["department_id"] is None:
+    user_depts = get_user_departments(user.id)
+    if not user_depts:
         await _reply(update, "❌ Спочатку обери департамент через /start")
         return
     
@@ -1045,13 +1046,13 @@ async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not difficulty:
         return
     
-    db_user = get_user(user.id)
-    if not db_user or db_user["department_id"] is None:
+    user_depts = get_user_departments(user.id)
+    if not user_depts:
         await _query_answer(query, "❌ Обери департамент через /start", show_alert=True)
         return
     
-    # Get filtered tasks
-    user_dept_id = db_user["department_id"]
+    # Get filtered tasks for primary department
+    user_dept_id = user_depts[0]
     tasks = get_tasks_filtered(difficulty, user_dept_id)
     
     if not tasks:

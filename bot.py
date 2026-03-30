@@ -279,7 +279,7 @@ def admin_with_dept_check(func):
         user = update.effective_user
         db_user = get_user(user.id)
         
-        if not db_user or not db_user.get("department_id"):
+        if not db_user or db_user["department_id"] is None:
             await _reply(update,
                 "❌ Адмін повинен мати обраний відділ. Напиши /start",
                 parse_mode="Markdown")
@@ -310,14 +310,14 @@ def requires_dept_and_verified(func):
             return
         
         # Check if user has department selected
-        if not db_user.get("department_id"):
+        if db_user["department_id"] is None:
             await _reply(update, 
                 "❌ Спочатку обери свій департамент. Напиши /start",
                 parse_mode="Markdown")
             return
         
         # Check if user is verified (but don't block - just warn)
-        if not db_user.get("is_verified"):
+        if not db_user["is_verified"]:
             # Show friendly reminder but don't block
             reminder_text = (
                 "ℹ️ Помітили, що ти не підписаний на наш канал!\n\n"
@@ -728,7 +728,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     lang = get_user_language(user.id)
     
     # Check if user already has department selected (fully registered)
-    if db_user.get("department_id"):
+    if db_user["department_id"] is not None:
         dept = get_department(db_user["department_id"])
         welcome_text = get_message("welcome_returning", lang, first_name=user.first_name or "друже",
                                    emoji=dept['emoji'], dept_name=dept['name'])
@@ -752,7 +752,7 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     register_user(user)
     
     db_user = get_user(user.id)
-    if not db_user.get("department_id"):
+    if db_user["department_id"] is None:
         await _reply(update, "❌ Спочатку обери департамент через /start")
         return
     
@@ -789,7 +789,7 @@ async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     
     db_user = get_user(user.id)
-    if not db_user or not db_user.get("department_id"):
+    if not db_user or db_user["department_id"] is None:
         await _query_answer(query, "❌ Обери департамент через /start", show_alert=True)
         return
     
@@ -1130,7 +1130,7 @@ def _render_user_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeybo
     """Render user page filtered by department."""
     # Get all users then filter by department
     all_users = list_users(limit=10000)  # Get all for filtering
-    dept_users = [u for u in all_users if u.get("department_id") == dept_id]
+    dept_users = [u for u in all_users if u["department_id"] == dept_id]
     
     total = len(dept_users)
     total_pages = max(1, (total + ADMIN_USERS_PAGE_SIZE - 1) // ADMIN_USERS_PAGE_SIZE)
@@ -1171,7 +1171,7 @@ def _render_task_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeybo
     """Render task page filtered by department."""
     # Get all tasks then filter by department
     all_tasks = get_tasks()
-    dept_tasks = [t for t in all_tasks if t.get("department_id") == dept_id]
+    dept_tasks = [t for t in all_tasks if t["department_id"] == dept_id]
     
     total_pages = max(1, (len(dept_tasks) + ADMIN_TASKS_PAGE_SIZE - 1) // ADMIN_TASKS_PAGE_SIZE)
     page = max(0, min(page, total_pages - 1))

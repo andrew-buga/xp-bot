@@ -1191,3 +1191,14 @@ def get_idea(idea_id):
     row = c.fetchone()
     conn.close()
     return row
+
+
+def delete_idea(idea_id):
+    """Delete an idea (permanent deletion)"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM ideas WHERE id=?", (idea_id,))
+    conn.commit()
+    deleted = c.rowcount > 0
+    conn.close()
+    return deleted

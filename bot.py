@@ -1,4 +1,5 @@
 ﻿import logging
+import sqlite3
 import time
 from collections import defaultdict, deque
 from functools import wraps
@@ -67,6 +68,7 @@ from database import (
     mark_idea_reviewed,
     mark_idea_status,
     get_idea,
+    delete_idea,
     get_user_departments,
     add_user_department,
     remove_user_department,
@@ -74,6 +76,7 @@ from database import (
     set_user_role,
     get_user_role,
     is_supervisor_of_dept,
+    DB_PATH,
 )
 
 
@@ -89,6 +92,7 @@ _user_events: dict[int, deque[float]] = defaultdict(deque)
 _user_notice_ts: dict[int, float] = {}
 
 ADMIN_USERS_PAGE_SIZE = 10
+ADMIN_IDEAS_PAGE_SIZE = 8
 ADMIN_TASKS_PAGE_SIZE = 8
 
 EDITABLE_TEXTS = {
@@ -770,6 +774,7 @@ def _admin_menu_markup(dept_id: int | None = None) -> InlineKeyboardMarkup:
             [_btn("➕ Додати завдання", callback_data=f"a:add:{dept_id or 'g'}")],
             [_btn("🗑 Видалити завдання", callback_data=f"a:dellist:0:{f'd{dept_id}' if dept_id else 'g'}")],
             [_btn("👥 Користувачі", callback_data=f"a:users:0:{f'd{dept_id}' if dept_id else 'g'}")],
+            [_btn("💡 Ідеї", callback_data=f"a:ideas:0:{f'd{dept_id}' if dept_id else 'g'}")],
             [_btn("🎁 Нарахувати XP", callback_data=f"a:xp:{dept_id or 'g'}")],
             [_btn("📊 Статистика", callback_data=f"a:stats:{dept_id or 'g'}")],
             [_btn("🛒 Магазин товарів", callback_data="a:shop_list")],
@@ -1337,6 +1342,71 @@ def _render_task_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeybo
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 
+def _render_ideas_page(page: int, user_id: int, role: str) -> tuple[str, InlineKeyboardMarkup]:
+    """Render paginated list of ideas for admin review."""
+    from datetime import datetime
+    
+    # Get unreviewed ideas filtered by role
+    all_ideas = get_unreviewed_ideas(role=role, user_id=user_id)
+    
+    total = len(all_ideas)
+    total_pages = max(1, (total + ADMIN_IDEAS_PAGE_SIZE - 1) // ADMIN_IDEAS_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    
+    start = page * ADMIN_IDEAS_PAGE_SIZE
+    chunk = all_ideas[start : start + ADMIN_IDEAS_PAGE_SIZE]
+    
+    lines = [f"💡 *Нові ідеї* (сторінка {page + 1}/{total_pages})", ""]
+    rows = []
+    
+    if not chunk:
+        lines.append("Немає нових ідей.")
+    else:
+        for idea in chunk:
+            # Format idea preview
+            text_preview = idea["text"][:50].replace("\n", " ")
+            if len(idea["text"]) > 50:
+                text_preview += "..."
+            
+            # Author info
+            if idea["is_anonymous"]:
+                author = "🕵️ Анонім"
+            else:
+                author = f"👤 {idea['username']}"
+            
+            # Department emoji if available
+            dept_emoji = ""
+            if idea["department_id"]:
+                dept = get_department(idea["department_id"])
+                if dept:
+                    dept_emoji = f" {dept['emoji']}"
+            
+            # Format the idea entry
+            lines.append(f"*#{idea['id']}* {dept_emoji}")
+            lines.append(f"  {author}")
+            lines.append(f"  _{text_preview}_")
+            lines.append("")
+            
+            # Buttons for this idea
+            rows.append([
+                _btn(f"✅ Розглянуто", callback_data=f"a:idea_mark:{idea['id']}:{page}"),
+                _btn(f"🗑 Видалити", callback_data=f"a:idea_del:{idea['id']}:{page}"),
+            ])
+    
+    # Navigation
+    nav = []
+    if page > 0:
+        nav.append(_btn("◀ Prev", callback_data=f"a:ideas:{page - 1}"))
+    if page < total_pages - 1:
+        nav.append(_btn("Next ▶", callback_data=f"a:ideas:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    
+    rows.append([_btn("⬅ В меню", callback_data="a:menu")])
+    
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
 def _render_shop_admin() -> tuple[str, InlineKeyboardMarkup]:
     products = list_products(active_only=False)
     lines = ["🛒 *Магазин товарів* (адмін)\n"]
@@ -1547,6 +1617,51 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             return
         text, markup = _render_user_detail(user_id, page)
         await _edit_message_text(query, text=f"✅ Бан знято.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data.startswith("a:ideas:"):
+        parts = data.split(":")
+        page = int(parts[2]) if len(parts) > 2 else 0
+        dept_filter = parts[3] if len(parts) > 3 else None
+        
+        user_id = query.from_user.id
+        role = get_user_role(user_id) or "user"
+        
+        text, markup = _render_ideas_page(page, user_id, role)
+        await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data.startswith("a:idea_mark:"):
+        parts = data.split(":")
+        idea_id = int(parts[2])
+        page = int(parts[3]) if len(parts) > 3 else 0
+        
+        mark_idea_status(idea_id, "reviewed")
+        
+        user_id = query.from_user.id
+        role = get_user_role(user_id) or "user"
+        
+        text, markup = _render_ideas_page(page, user_id, role)
+        await _edit_message_text(query, text=f"✅ Ідея #{idea_id} позначена як розглянута.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data.startswith("a:idea_del:"):
+        parts = data.split(":")
+        idea_id = int(parts[2])
+        page = int(parts[3]) if len(parts) > 3 else 0
+        
+        # Delete idea from database
+        delete_ok = delete_idea(idea_id)
+        
+        if not delete_ok:
+            await _query_answer(query, "Ідея не знайдена", show_alert=True)
+            return
+        
+        user_id = query.from_user.id
+        role = get_user_role(user_id) or "user"
+        
+        text, markup = _render_ideas_page(page, user_id, role)
+        await _edit_message_text(query, text=f"🗑 Ідея #{idea_id} видалена.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:stats:"):

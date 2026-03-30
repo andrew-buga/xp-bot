@@ -849,7 +849,7 @@ def _admin_menu_markup(dept_id: int | None = None) -> InlineKeyboardMarkup:
         [
             [_btn("➕ Додати завдання", callback_data=f"a:add:{dept_id or 'g'}")],
             [_btn("🗑 Видалити завдання", callback_data=f"a:dellist:0:{f'd{dept_id}' if dept_id else 'g'}")],
-            [_btn("👥 Користувачі", callback_data="a:users:")],
+            [_btn("👥 Користувачі", callback_data="a:users:0")],
             [_btn("💡 Ідеї", callback_data=f"a:ideas:0:{f'd{dept_id}' if dept_id else 'g'}")],
             [_btn("🎁 Нарахувати XP", callback_data=f"a:xp:{dept_id or 'g'}")],
             [_btn("📊 Статистика", callback_data=f"a:stats:{dept_id or 'g'}")],
@@ -1799,8 +1799,8 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     if data.startswith("a:users:"):
         logger.debug(f"Handling a:users: callback for user {user_id}")
         parts = data.split(":")
-        page = int(parts[2])
-        dept_filter = parts[3] if len(parts) > 3 else None
+        page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+        dept_filter = parts[3] if len(parts) > 3 and parts[3] else None
         
         # Handle special case: show filter menu
         if dept_filter is None:

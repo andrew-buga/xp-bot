@@ -360,15 +360,20 @@ async def process_subscription_verification(update: Update, ctx: ContextTypes.DE
     user = update.effective_user
     lang = get_user_language(user.id)
     
+    logger.info(f"🔍 Перевіряю підписку для користувача {user.id}...")
     is_subscribed = await check_channel_subscription(ctx.bot, user.id, TELEGRAM_CHANNEL_ID)
+    logger.info(f"📊 Результат перевірки: підписаний={is_subscribed}")
     
     if is_subscribed:
+        logger.info(f"✅ Користувач {user.id} підписаний - відправляю dept selection")
         mark_verified(user.id)
         await _reply(update,
             get_message("verify_subscribed", lang),
             parse_mode="Markdown")
         await show_department_selection(update)
+        logger.info(f"✅ Меню вибору відділу відправлено для {user.id}")
     else:
+        logger.info(f"❌ Користувач {user.id} не підписаний - показую запит")
         # Show subscription request
         await _reply(update,
             get_message("verify_not_subscribed", lang, first_name=user.first_name or "friend"),

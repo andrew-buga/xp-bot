@@ -335,10 +335,11 @@ async def check_channel_subscription(bot, user_id: int, channel_id: int) -> bool
     """Check if user is subscribed to channel. Returns True if subscribed."""
     try:
         member = await bot.get_chat_member(channel_id, user_id)
-        # Check if user is member (not restricted/kicked/left)
-        return member.status in ["member", "administrator", "creator", "restricted"]
+        is_subscribed = member.status in ["member", "administrator", "creator"]
+        logger.info(f"🔍 Статус користувача {user_id} в каналі {channel_id}: {member.status} → підписаний={is_subscribed}")
+        return is_subscribed
     except Exception as e:
-        logger.warning(f"Failed to check subscription for user {user_id}: {e}")
+        logger.warning(f"❌ Помилка перевірки підписки для {user_id}: {e}")
         return False
 
 
@@ -725,22 +726,32 @@ async def _cleanup_wizard_prompts(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int) 
 
 @rate_limit_user
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """New startup flow: language → verification → department"""
+    """Startup flow: fully registered → welcome | has language → verify | new → select language"""
     user = update.effective_user
     register_user(user)
     
     db_user = get_user(user.id)
     lang = get_user_language(user.id)
     
-    # Check if user already has department selected (fully registered)
+    logger.info(f"👤 /start від {user.id}: dept={db_user['department_id']}, lang={lang}")
+    
+    # 1️⃣ User is fully registered - show welcome
     if db_user["department_id"] is not None:
         dept = get_department(db_user["department_id"])
         welcome_text = get_message("welcome_returning", lang, first_name=user.first_name or "друже",
                                    emoji=dept['emoji'], dept_name=dept['name'])
         await _reply(update, welcome_text, parse_mode="Markdown")
+        logger.info(f"✅ Користувач {user.id} повністю зареєстрований - показано привіт")
         return
     
-    # New user or user without department - start the flow
+    # 2️⃣ User has language but no department - go to verification
+    if lang and lang != "default":
+        logger.info(f"🔄 Користувач {user.id} має мову ({lang}) - переходимо до перевірки")
+        await process_subscription_verification(update, ctx)
+        return
+    
+    # 3️⃣ New user - ask for language
+    logger.info(f"🆕 Новий користувач {user.id} - питаємо мову")
     await show_language_selection(update)
 
 

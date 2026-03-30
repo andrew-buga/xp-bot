@@ -82,6 +82,7 @@ from database import (
     get_user_all_dept_roles,
     get_dept_supervisors,
     is_supervisor_of_dept,
+    get_users_in_department,
     DB_PATH,
 )
 
@@ -1497,9 +1498,8 @@ def _render_shop_admin() -> tuple[str, InlineKeyboardMarkup]:
 
 def _render_user_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeyboardMarkup]:
     """Render user page filtered by department."""
-    # Get all users then filter by department
-    all_users = list_users(limit=10000)  # Get all for filtering
-    dept_users = [u for u in all_users if u["department_id"] == dept_id]
+    # Get users in this department
+    dept_users = get_users_in_department(dept_id)
     
     total = len(dept_users)
     total_pages = max(1, (total + ADMIN_USERS_PAGE_SIZE - 1) // ADMIN_USERS_PAGE_SIZE)

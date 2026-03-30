@@ -704,6 +704,21 @@ def is_supervisor_of_dept(user_id, dept_id):
     return get_user_dept_role(user_id, dept_id) == 'supervisor'
 
 
+def get_users_in_department(dept_id: int) -> list:
+    """Get all users in a specific department"""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        SELECT u.* FROM users u
+        INNER JOIN users_departments ud ON u.user_id = ud.user_id
+        WHERE ud.department_id = ?
+        ORDER BY u.user_id
+    """, (dept_id,))
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows] if rows else []
+
+
 def mark_verified(user_id):
     """Mark user as verified (subscribed to channel)"""
     conn = get_conn()

@@ -1289,6 +1289,16 @@ def _render_user_detail(user_id: int, page: int) -> tuple[str, InlineKeyboardMar
         return None, None
 
     status = "banned" if user["is_banned"] else "active"
+    role = get_user_role(user_id) or "user"
+    
+    # Format role display
+    role_emoji = {"admin": "👑", "supervisor": "📋", "user": "👤"}.get(role, "❓")
+    role_text = {
+        "admin": "Адміністратор",
+        "supervisor": "Куратор команди",
+        "user": "Користувач"
+    }.get(role, "Невідомо")
+    
     lines = [
         "👤 *Картка користувача*",
         f"ID: `{user['user_id']}`",
@@ -1298,16 +1308,34 @@ def _render_user_detail(user_id: int, page: int) -> tuple[str, InlineKeyboardMar
         f"🏆 Загальний XP: {user['total_xp']}",
         f"💰 Доступний XP: {user['spendable_xp']}",
         f"Status: *{status}*",
+        f"{role_emoji} Роль: *{role_text}*",
     ]
 
+    rows = []
+    
+    # Ban/Unban button
     if user["is_banned"]:
         action_btn = _btn("✅ Unban", callback_data=f"a:unban:{user['user_id']}:{page}")
     else:
         action_btn = _btn("🚫 Ban", callback_data=f"a:ban:{user['user_id']}:{page}")
+    rows.append([action_btn])
+    
+    # Role change buttons (only if user is not admin themselves)
+    if user["user_id"] != user_id:  # Can't change own role
+        role_buttons = []
+        if role != "user":
+            role_buttons.append(_btn("👤 User", callback_data=f"a:urole:{user['user_id']}:user:{page}"))
+        if role != "supervisor":
+            role_buttons.append(_btn("📋 Supervisor", callback_data=f"a:urole:{user['user_id']}:supervisor:{page}"))
+        if role != "admin":
+            role_buttons.append(_btn("👑 Admin", callback_data=f"a:urole:{user['user_id']}:admin:{page}"))
+        
+        if role_buttons:
+            rows.append(role_buttons)
+    
+    rows.append([_btn("⬅ До списку", callback_data=f"a:users:{page}")])
 
-    markup = InlineKeyboardMarkup(
-        [[action_btn], [_btn("⬅ До списку", callback_data=f"a:users:{page}")]]
-    )
+    markup = InlineKeyboardMarkup(rows)
     return "\n".join(lines), markup
 
 
@@ -1690,6 +1718,26 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             return
         text, markup = _render_user_detail(user_id, page)
         await _edit_message_text(query, text=f"✅ Бан знято.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data.startswith("a:urole:"):
+        parts = data.split(":")
+        target_user_id = int(parts[2])
+        new_role = parts[3]
+        page = int(parts[4]) if len(parts) > 4 else 0
+        
+        # Validate role
+        if new_role not in ["user", "supervisor", "admin"]:
+            await _query_answer(query, "❌ Невідома роль", show_alert=True)
+            return
+        
+        # Set the role
+        set_user_role(target_user_id, new_role)
+        
+        # Refresh user detail
+        text, markup = _render_user_detail(target_user_id, page)
+        role_display = {"admin": "Адміністратор", "supervisor": "Куратор команди", "user": "Користувач"}[new_role]
+        await _edit_message_text(query, text=f"✅ Роль змінена на: *{role_display}*\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 
     if data.startswith("a:ideas:"):

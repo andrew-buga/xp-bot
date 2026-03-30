@@ -66,7 +66,25 @@ MESSAGES = {
         "ro": "🏢 *Selectează-ți departamentul:*",
         "uk": "🏢 *Обери свій департамент:*",
     },
-    
+
+    "dept_multi_select": {
+        "en": "🏢 *Select your departments* (you can choose multiple):\n\n✓ = selected | ☐ = not selected",
+        "ro": "🏢 *Selectează-ți departamentele* (poți alege mai multe):\n\n✓ = selectat | ☐ = neselecționat",
+        "uk": "🏢 *Обери свої департаменти* (можеш вибрати кілька):\n\n✓ = вибрано | ☐ = не вибрано",
+    },
+
+    "dept_multi_done": {
+        "en": "✅ *Departments saved!*",
+        "ro": "✅ *Departamente salvate!*",
+        "uk": "✅ *Департаменти збережені!*",
+    },
+
+    "dept_btn_done": {
+        "en": "✅ Done",
+        "ro": "✅ Gata",
+        "uk": "✅ Готово",
+    },
+
     "dept_welcome": {
         "en": "✅ *Great, {first_name}!*\n\n🐿 Welcome to ATUR! I'm Білка Валерій!\n\nYou're in department: *{emoji} {dept_name}*\n\nNow you can start completing tasks!\n\n✨ /tasks — task list\n⭐ /xp — your profile\n🏆 /leaderboard — top players",
         "ro": "✅ *Grozav, {first_name}!*\n\n🐿 Bine ai venit la ATUR! Sunt Білка Валерій!\n\nEști în departamentul: *{emoji} {dept_name}*\n\nAcum poți începe să completezi sarcini!\n\n✨ /tasks — lista sarcinilor\n⭐ /xp — profilul tău\n🏆 /leaderboard — top jucători",

@@ -414,7 +414,7 @@ async def process_subscription_verification(update: Update, ctx: ContextTypes.DE
         await _reply(update,
             get_message("verify_subscribed", lang),
             parse_mode="Markdown")
-        await show_department_selection(update)
+        await show_department_selection(update, ctx)
         logger.info(f"✅ Меню вибору відділу відправлено для {user.id}")
     else:
         logger.info(f"❌ Користувач {user.id} не підписаний - показую запит")
@@ -427,21 +427,36 @@ async def process_subscription_verification(update: Update, ctx: ContextTypes.DE
             parse_mode="Markdown")
 
 
-async def show_department_selection(update: Update):
-    """Display department selection buttons."""
+async def show_department_selection(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Display department selection with multi-select checkboxes."""
     user = update.effective_user
     lang = get_user_language(user.id)
     departments = get_departments()
     
+    # Get currently selected departments
+    current_depts = get_user_departments(user.id) or []
+    
+    # Store in context for this session
+    if "selected_depts" not in ctx.user_data:
+        ctx.user_data["selected_depts"] = current_depts.copy()
+    
+    selected = ctx.user_data["selected_depts"]
+    
     rows = []
     for dept in departments:
-        rows.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"dept_{dept['id']}")])
+        is_selected = dept['id'] in selected
+        check = "✓" if is_selected else "☐"
+        btn_text = f"{check} {dept['emoji']} {dept['name']}"
+        rows.append([_btn(btn_text, callback_data=f"dept_toggle_{dept['id']}")])
+    
+    # Add Done button
+    rows.append([_btn(get_message("dept_btn_done", lang), callback_data="dept_done")])
     
     back_text = "⬅ Back" if lang == "en" else "⬅ Înapoi" if lang == "ro" else "⬅ Назад"
     rows.append([_btn(back_text, callback_data="lang_select")])
     
     await _reply(update,
-        get_message("dept_select", lang),
+        get_message("dept_multi_select", lang),
         reply_markup=InlineKeyboardMarkup(rows),
         parse_mode="Markdown")
 
@@ -517,34 +532,92 @@ async def handle_verify_retry(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Handle department selection."""
+    """Handle multi-select department selection."""
     query = update.callback_query
     await _query_answer(query)
     
     data = query.data
-    if not data.startswith("dept_"):
+    user_id = query.from_user.id
+    lang = get_user_language(user_id)
+    
+    # Initialize selected_depts in context if not present
+    if "selected_depts" not in ctx.user_data:
+        ctx.user_data["selected_depts"] = get_user_departments(user_id) or []
+    
+    selected = ctx.user_data["selected_depts"]
+    
+    # Handle toggle
+    if data.startswith("dept_toggle_"):
+        try:
+            dept_id = int(data.split("_")[2])
+        except (IndexError, ValueError):
+            await _query_answer(query, "❌ Помилка вибору. Спробуй ще раз.", show_alert=True)
+            return
+        
+        if dept_id in selected:
+            selected.remove(dept_id)
+        else:
+            selected.append(dept_id)
+        
+        # Refresh the display
+        departments = get_departments()
+        rows = []
+        for dept in departments:
+            is_selected = dept['id'] in selected
+            check = "✓" if is_selected else "☐"
+            btn_text = f"{check} {dept['emoji']} {dept['name']}"
+            rows.append([_btn(btn_text, callback_data=f"dept_toggle_{dept['id']}")])
+        
+        # Add Done button
+        rows.append([_btn(get_message("dept_btn_done", lang), callback_data="dept_done")])
+        
+        back_text = "⬅ Back" if lang == "en" else "⬅ Înapoi" if lang == "ro" else "⬅ Назад"
+        rows.append([_btn(back_text, callback_data="lang_select")])
+        
+        await _edit_message_text(query,
+            get_message("dept_multi_select", lang),
+            reply_markup=InlineKeyboardMarkup(rows),
+            parse_mode="Markdown")
         return
     
-    try:
-        dept_id = int(data.split("_")[1])
-    except (IndexError, ValueError):
-        await _query_answer(query, "❌ Помилка вибору. Спробуй ще раз.", show_alert=True)
+    # Handle Done button
+    if data == "dept_done":
+        if not selected:
+            await _query_answer(query, "⚠️ Виберай хоча б один департамент!", show_alert=True)
+            return
+        
+        # Save all selected departments
+        # First clear existing ones
+        current_depts = get_user_departments(user_id) or []
+        for dept_id in current_depts:
+            if dept_id not in selected:
+                remove_user_department(user_id, dept_id)
+        
+        # Add new ones
+        for dept_id in selected:
+            if dept_id not in current_depts:
+                add_user_department(user_id, dept_id)
+        
+        # Format dept list for message
+        departments = get_departments()
+        dept_list = ", ".join([
+            f"{d['emoji']} {d['name']}"
+            for d in departments
+            if d['id'] in selected
+        ])
+        
+        await _edit_message_text(query,
+            f"{get_message('dept_multi_done', lang)}\n\n"
+            f"🏢 {dept_list}\n\n"
+            f"✨ /tasks — список завдань\n"
+            f"⭐ /xp — твій профіль\n"
+            f"🏆 /leaderboard — топ гравців\n"
+            f"🎯 /idea — поділись ідеєю",
+            parse_mode="Markdown")
+        
+        # Clean up context
+        ctx.user_data.pop("selected_depts", None)
         return
-    
-    user = query.from_user
-    dept = get_department(dept_id)
-    lang = get_user_language(user.id)
-    
-    if not dept:
-        await _query_answer(query, "❌ Департамент не знайдено.", show_alert=True)
-        return
-    
-    select_department(user.id, dept_id)
-    
-    await _edit_message_text(query,
-        get_message("dept_welcome", lang, first_name=user.first_name or "друже", 
-                   emoji=dept['emoji'], dept_name=dept['name']),
-        parse_mode="Markdown")
 
 
 @rate_limit_user

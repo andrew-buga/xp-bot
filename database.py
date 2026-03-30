@@ -66,10 +66,8 @@ def init_db():
         # Migrate: existing department_id → departments_json (JSON array)
         c.execute("SELECT user_id, department_id FROM users WHERE department_id IS NOT NULL")
         for row in c.fetchall():
-            import json
             dept_json = json.dumps([row['department_id']])
             c.execute("UPDATE users SET departments_json=? WHERE user_id=?", (dept_json, row['user_id']))
-        logger.info("✅ Migrated department_id → departments_json")
     
     if "role" not in user_columns:
         c.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")

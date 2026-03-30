@@ -600,19 +600,26 @@ async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_
         
         # Format dept list for message
         departments = get_departments()
-        dept_list = ", ".join([
-            f"{d['emoji']} {d['name']}"
+        dept_list = "\n".join([
+            f"  {d['emoji']} {d['name']}"
             for d in departments
             if d['id'] in selected
         ])
         
+        # Build main menu
+        main_menu_rows = [
+            [_btn("✨ /tasks — " + ("tasks" if lang == "en" else "sarcini" if lang == "ro" else "завдання"), callback_data="main_tasks")],
+            [_btn("⭐ /xp — " + ("profile" if lang == "en" else "profil" if lang == "ro" else "профіль"), callback_data="main_xp")],
+            [_btn("🏆 /leaderboard — " + ("leaderboard" if lang == "en" else "clasament" if lang == "ro" else "топ"), callback_data="main_leaderboard")],
+            [_btn("🎯 /idea — " + ("share an idea" if lang == "en" else "partajează o idee" if lang == "ro" else "поділись ідеєю"), callback_data="main_idea")],
+            [_btn(get_message("dept_btn_change", lang), callback_data="change_depts")],
+        ]
+        
+        welcome_msg = get_message("dept_multi_done", lang, depts=dept_list)
+        
         await _edit_message_text(query,
-            f"{get_message('dept_multi_done', lang)}\n\n"
-            f"🏢 {dept_list}\n\n"
-            f"✨ /tasks — список завдань\n"
-            f"⭐ /xp — твій профіль\n"
-            f"🏆 /leaderboard — топ гравців\n"
-            f"🎯 /idea — поділись ідеєю",
+            welcome_msg,
+            reply_markup=InlineKeyboardMarkup(main_menu_rows),
             parse_mode="Markdown")
         
         # Clean up context
@@ -1901,6 +1908,52 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == "noop":
+        return
+
+    # Handle main menu buttons (after department selection)
+    if data in ["main_tasks", "main_xp", "main_leaderboard", "main_idea"]:
+        user = query.from_user
+        register_user(user)
+        
+        if data == "main_tasks":
+            await cmd_tasks(update, ctx)
+        elif data == "main_xp":
+            await cmd_xp(update, ctx)
+        elif data == "main_leaderboard":
+            await cmd_leaderboard(update, ctx)
+        elif data == "main_idea":
+            await cmd_idea(update, ctx)
+        return
+
+    # Handle change departments button
+    if data == "change_depts":
+        user_id = query.from_user.id
+        lang = get_user_language(user_id)
+        
+        # Initialize context for department selection
+        ctx.user_data["selected_depts"] = get_user_departments(user_id) or []
+        
+        # Show department selection again
+        departments = get_departments()
+        selected = ctx.user_data["selected_depts"]
+        
+        rows = []
+        for dept in departments:
+            is_selected = dept['id'] in selected
+            check = "✓" if is_selected else "☐"
+            btn_text = f"{check} {dept['emoji']} {dept['name']}"
+            rows.append([_btn(btn_text, callback_data=f"dept_toggle_{dept['id']}")])
+        
+        # Add Done button
+        rows.append([_btn(get_message("dept_btn_done", lang), callback_data="dept_done")])
+        
+        back_text = "⬅ Back" if lang == "en" else "⬅ Înapoi" if lang == "ro" else "⬅ Назад"
+        rows.append([_btn(back_text, callback_data="lang_select")])
+        
+        await _edit_message_text(query,
+            get_message("dept_multi_select", lang),
+            reply_markup=InlineKeyboardMarkup(rows),
+            parse_mode="Markdown")
         return
 
     if data.startswith("a:") or data.startswith("be:"):

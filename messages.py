@@ -74,15 +74,21 @@ MESSAGES = {
     },
 
     "dept_multi_done": {
-        "en": "✅ *Departments saved!*",
-        "ro": "✅ *Departamente salvate!*",
-        "uk": "✅ *Департаменти збережені!*",
+        "en": "✅ *Departments saved!*\n\n🏢 Your departments:\n{depts}\n\nNow you can start completing tasks!",
+        "ro": "✅ *Departamente salvate!*\n\n🏢 Departamentele tale:\n{depts}\n\nAcum poți începe să completezi sarcini!",
+        "uk": "✅ *Департаменти збережені!*\n\n🏢 Твої департаменти:\n{depts}\n\nТепер можеш почати виконувати завдання!",
     },
 
     "dept_btn_done": {
         "en": "✅ Done",
         "ro": "✅ Gata",
         "uk": "✅ Готово",
+    },
+
+    "dept_btn_change": {
+        "en": "🏢 Change Departments",
+        "ro": "🏢 Schimbă Departamentele",
+        "uk": "🏢 Змінити департаменти",
     },
 
     "dept_welcome": {

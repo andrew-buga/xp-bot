@@ -74,9 +74,9 @@ MESSAGES = {
     },
 
     "dept_multi_done": {
-        "en": "✅ *Departments saved!*\n\n🏢 Your departments:\n{depts}\n\nNow you can start completing tasks!",
-        "ro": "✅ *Departamente salvate!*\n\n🏢 Departamentele tale:\n{depts}\n\nAcum poți începe să completezi sarcini!",
-        "uk": "✅ *Департаменти збережені!*\n\n🏢 Твої департаменти:\n{depts}\n\nТепер можеш почати виконувати завдання!",
+        "en": "✅ *Departments saved!*\n\n🏢 Your departments:\n{depts}\n\nYou can now start completing tasks!\n\nUse /menu to see all commands or /start to change departments.",
+        "ro": "✅ *Departamente salvate!*\n\n🏢 Departamentele tale:\n{depts}\n\nPoți acum să completezi sarcini!\n\nFoloseşte /menu pentru comenzi sau /start pentru a schimba departamentele.",
+        "uk": "✅ *Департаменти збережені!*\n\n🏢 Твої департаменти:\n{depts}\n\nТепер можеш виконувати завдання!\n\nНапиши /menu для команд або /start щоб змінити департаменти.",
     },
 
     "dept_btn_done": {
@@ -89,6 +89,18 @@ MESSAGES = {
         "en": "🏢 Change Departments",
         "ro": "🏢 Schimbă Departamentele",
         "uk": "🏢 Змінити департаменти",
+    },
+
+    "menu_prompt": {
+        "en": "📋 *Main Menu*\n\n✨ /tasks — view tasks\n⭐ /xp — your profile\n🏆 /leaderboard — leaderboard\n🎯 /idea — share an idea\n🌐 /start — change departments",
+        "ro": "📋 *Meniu Principal*\n\n✨ /tasks — vizualizare sarcini\n⭐ /xp — profilul tău\n🏆 /leaderboard — clasament\n🎯 /idea — partajează o idee\n🌐 /start — schimbă departamentele",
+        "uk": "📋 *Головне меню*\n\n✨ /tasks — завдання\n⭐ /xp — твій профіль\n🏆 /leaderboard — топ\n🎯 /idea — поділись ідеєю\n🌐 /start — змінити департаменти",
+    },
+
+    "welcome_multi_returning": {
+        "en": "👋 *Welcome back, {first_name}!*\n\n🏢 Your departments:\n{depts}\n\n✨ /tasks — tasks\n⭐ /xp — profile\n🏆 /leaderboard — leaderboard\n🎯 /idea — share an idea\n🌐 /start — change departments",
+        "ro": "👋 *Bine ai revenit, {first_name}!*\n\n🏢 Departamentele tale:\n{depts}\n\n✨ /tasks — sarcini\n⭐ /xp — profil\n🏆 /leaderboard — clasament\n🎯 /idea — partajează o idee\n🌐 /start — schimbă departamentele",
+        "uk": "👋 *Привіт знову, {first_name}!*\n\n🏢 Твої департаменти:\n{depts}\n\n✨ /tasks — завдання\n⭐ /xp — профіль\n🏆 /leaderboard — топ\n🎯 /idea — поділись ідеєю\n🌐 /start — змінити департаменти",
     },
 
     "dept_welcome": {

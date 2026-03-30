@@ -606,20 +606,10 @@ async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_
             if d['id'] in selected
         ])
         
-        # Build main menu
-        main_menu_rows = [
-            [_btn("✨ /tasks — " + ("tasks" if lang == "en" else "sarcini" if lang == "ro" else "завдання"), callback_data="main_tasks")],
-            [_btn("⭐ /xp — " + ("profile" if lang == "en" else "profil" if lang == "ro" else "профіль"), callback_data="main_xp")],
-            [_btn("🏆 /leaderboard — " + ("leaderboard" if lang == "en" else "clasament" if lang == "ro" else "топ"), callback_data="main_leaderboard")],
-            [_btn("🎯 /idea — " + ("share an idea" if lang == "en" else "partajează o idee" if lang == "ro" else "поділись ідеєю"), callback_data="main_idea")],
-            [_btn(get_message("dept_btn_change", lang), callback_data="change_depts")],
-        ]
-        
         welcome_msg = get_message("dept_multi_done", lang, depts=dept_list)
         
         await _edit_message_text(query,
             welcome_msg,
-            reply_markup=InlineKeyboardMarkup(main_menu_rows),
             parse_mode="Markdown")
         
         # Clean up context
@@ -925,25 +915,34 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user)
     
-    db_user = get_user(user.id)
     lang = get_user_language(user.id)
+    depts = get_user_departments(user.id) or []
     
-    logger.info(f"👤 /start від {user.id}: dept={db_user['department_id']}, lang={lang}")
+    logger.info(f"👤 /start від {user.id}: depts={depts}, lang={lang}")
     
-    # 1️⃣ User is fully registered - show welcome
-    if db_user["department_id"] is not None:
-        dept = get_department(db_user["department_id"])
-        welcome_text = get_message("welcome_returning", lang, first_name=user.first_name or "друже",
-                                   emoji=dept['emoji'], dept_name=dept['name'])
-        # Меню з кнопкою зміни мови
+    # 1️⃣ User is fully registered with departments - show welcome
+    if depts:
+        departments = get_departments()
+        dept_list = "\n".join([
+            f"  {d['emoji']} {d['name']}"
+            for d in departments
+            if d['id'] in depts
+        ])
+        
+        welcome_text = get_message("welcome_multi_returning", lang, 
+                                   first_name=user.first_name or "друже",
+                                   depts=dept_list)
+        
+        # Меню з кнопками для змін
         markup = InlineKeyboardMarkup([
             [_btn("🌐 Змінити мову", callback_data="change_lang")],
+            [_btn(get_message("dept_btn_change", lang), callback_data="change_depts")],
         ])
         await _reply(update, welcome_text, reply_markup=markup, parse_mode="Markdown")
         logger.info(f"✅ Користувач {user.id} повністю зареєстрований - показано привіт")
         return
     
-    # 2️⃣ User has language but no department - go to verification
+    # 2️⃣ User has language but no departments - go to verification
     if lang and lang != "default":
         logger.info(f"🔄 Користувач {user.id} має мову ({lang}) - переходимо до перевірки")
         await process_subscription_verification(update, ctx)
@@ -958,6 +957,52 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @rate_limit_user
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await _reply(update, _get_text_setting("help_text"), parse_mode="Markdown")
+
+
+@rate_limit_user
+async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Show main menu for registered users."""
+    user = update.effective_user
+    register_user(user)
+    
+    lang = get_user_language(user.id)
+    depts = get_user_departments(user.id)
+    
+    if not depts:
+        await _reply(update, "❌ Спочатку обери департамент через /start")
+        return
+    
+    text = get_message("menu_prompt", lang)
+    
+    # Add admin option if user is admin
+    if user.id in ADMIN_IDS:
+        admin_text = "🛠 /admin — адмін-панель" if lang == "uk" else "🛠 /admin — admin panel" if lang == "en" else "🛠 /admin — panou admin"
+        text += f"\n{admin_text}"
+    
+    await _reply(update, text, parse_mode="Markdown")
+
+
+@rate_limit_user
+async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Admin panel."""
+    user = update.effective_user
+    register_user(user)
+    
+    db_user = get_user(user.id)
+    
+    if db_user["is_banned"]:
+        await _reply(update, "❌ Ви забанені")
+        return
+    
+    if user.id not in ADMIN_IDS:
+        await _reply(update, "❌ Тільки для адмінів!")
+        return
+    
+    _clear_wizard(ctx)
+    await _reply(update,
+        "🛠 *Адмін-панель*",
+        reply_markup=_admin_menu_markup(),
+        parse_mode="Markdown")
 
 
 @rate_limit_user
@@ -1106,19 +1151,6 @@ async def cmd_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _reply(update, "❌ Поточну дію скасовано.")
     else:
         await _reply(update, "Немає активної дії для скасування.")
-
-
-@admin_with_dept_check
-@rate_limit_user
-async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    _clear_wizard(ctx)
-    dept_id = ctx.user_data.get("admin_dept_id")
-    await _reply(
-        update,
-        "🛠 *Адмін-панель*",
-        reply_markup=_admin_menu_markup(dept_id),
-        parse_mode="Markdown"
-    )
 
 
 @admin_only
@@ -1910,21 +1942,6 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data == "noop":
         return
 
-    # Handle main menu buttons (after department selection)
-    if data in ["main_tasks", "main_xp", "main_leaderboard", "main_idea"]:
-        user = query.from_user
-        register_user(user)
-        
-        if data == "main_tasks":
-            await cmd_tasks(update, ctx)
-        elif data == "main_xp":
-            await cmd_xp(update, ctx)
-        elif data == "main_leaderboard":
-            await cmd_leaderboard(update, ctx)
-        elif data == "main_idea":
-            await cmd_idea(update, ctx)
-        return
-
     # Handle change departments button
     if data == "change_depts":
         user_id = query.from_user.id
@@ -2389,6 +2406,7 @@ def main():
 
     # Main commands
     app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("menu", cmd_menu))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("tasks", cmd_tasks))
     app.add_handler(CommandHandler("xp", cmd_xp))

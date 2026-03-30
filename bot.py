@@ -1205,6 +1205,20 @@ def _render_task_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeybo
     rows.append([_btn("⬅ В меню", callback_data="a:menu")])
 
     return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
+def _render_shop_admin() -> tuple[str, InlineKeyboardMarkup]:
+    products = list_products(active_only=False)
+    lines = ["🛒 *Магазин товарів* (адмін)\n"]
+    rows = []
+
+    if not products:
+        lines.append("_Товарів ще немає. Натисни \"Додати товар\"._")
+    else:
+        for p in products:
+            status = "✅" if p["is_active"] else "🔴"
+            lines.append(f"{status} #{p['id']} — *{p['name']}* ({p['price']} XP)")
+            toggle_icon = "🔴 Деакт." if p["is_active"] else "✅ Акт."
             rows.append([
                 _btn(f"✏️ Ред.", callback_data=f"a:shop_edit:{p['id']}"),
                 _btn(toggle_icon, callback_data=f"a:shop_toggle:{p['id']}"),

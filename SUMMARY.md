@@ -1,126 +1,126 @@
-# 📋 Summary of Recent Changes
+# 📋 Резюме останніх змін
 
-Hi! Here's what I worked on for you in this session. Everything is implemented and committed. 🚀
+Привіт! Ось що я зробив у цій сесії. Все реалізовано та закоммічено. 🚀
 
 ---
 
-## ✨ What's New
+## ✨ Що нового
 
-### 1. **XP System with Dynamic Leveling** 
+### 1. **XP-система з динамічним левелуванням** 
 *(Commit: f1108fe)*
 
-Your bot now has a complete experience (XP) system! Here's how it works:
+Твій бот тепер має повноцінну систему досвіду (XP)! Ось як вона працює:
 
-- **Players earn XP** for different activities (messages, reactions, task completions, etc.)
-- **Automatic Leveling** with difficulty that scales as you progress (using a smart quadratic formula)
-- **Default Milestones** every 5 levels with special achievement notifications
-- **Leaderboards** to track who's on top
-- **Fully Configurable** - change XP rewards, level caps, difficulty scaling from `config.py`
+- **Гравці отримують XP** за різні дійс (повідомлення, реакції, виконання завдань та ін.)
+- **Автоматичне левелування** зі складністю, що зростає по мірі прогресу (з допомогою розумної квадратичної формули)
+- **Стандартні віхи** кожні 5 рівнів зі спеціальними сповіщеннями про досягнення
+- **Таблиця лідерів** для відстеження топ гравців
+- **Повністю налаштовується** — змінюй нагороди за XP, ліміти рівнів, масштабування складності з `config.py`
 
-**Technical:**
-- New database tables: `exp_tracker`, `level_milestones`, `leaderboard`
-- XP system is completely separate from business logic (no prompts doing calculations!)
-- All messages in `messages.py` for easy translation later
+**Технічна частина:**
+- Нові таблиці БД: `exp_tracker`, `level_milestones`, `leaderboard`
+- XP-система повністю відокремлена від бізнес-логіки (без обчислень в промптах!)
+- Всі повідомлення в `messages.py` для легкої локалізації потім
 
 ---
 
-### 2. **Admin Panel with Department Access Control**
+### 2. **Адмін-панель з контролем доступу по відділам**
 *(Commit: 53c1cd4)*
 
-The admin panel is now **department-aware**. This means:
+Адмін-панель тепер **розуміє відділи**. Це означає:
 
-**For Admins:**
-- Run `/admin` to open your admin panel
-- You MUST have a department selected (we'll ask via `/start` if you don't)
-- The panel shows your department name and emoji
-- All actions (adding tasks, managing users) are scoped to your department
+**Для адмінів:**
+- Запусти `/admin` щоб відкрити адмін-панель
+- Ти ПОВИНЕН мати обраний відділ (ми попросимо через `/start` якщо ти цього не зробив)
+- Панель показує назву та емодзі твого відділу
+- Всі дії (додавання завдань, керування користувачами) обмежені твоїм відділом
 
-**What Changed:**
-- ✅ New decorator `@admin_with_dept_check` - ensures admin + department selection
-- ✅ Users list filters to show only your department's users
-- ✅ Tasks list filters to show only your department's tasks
-- ✅ Department context carries through all navigation (pagination, menus, etc.)
-- ✅ Help text updated (`/help_admin`)
+**Що змінилось:**
+- ✅ Новий декоратор `@admin_with_dept_check` — перевіряє адмін статус + обраний відділ
+- ✅ Список користувачів фільтрується — показує тільки користувачів твого відділу
+- ✅ Список завдань фільтрується — показує тільки завдання твого відділу
+- ✅ Контекст відділу зберігається при навігації (сторінки, меню, тощо)
+- ✅ Текст довідки оновлений (`/help_admin`)
 
-**Why This is Good:**
-- Admins can only manage their own department
-- Prevents accidental changes in other departments
-- Scales well as you add more departments
-- Backward compatible - old admin commands still work
+**Чому це хорошо:**
+- Адміни керують тільки своїм відділом
+- Запобігає випадковим змінам в інших відділах
+- Добре масштабується при додаванні нових відділів
+- Назад сумісне — старі команди адміна все ще працюють
 
 ---
 
-## 🎯 How It All Works Together
+## 🎯 Як все це працює разом
 
 ```
-User registers → Picks language → Picks department → Joins their department
+Користувач реєструється → Вибирає мову → Вибирає відділ → Вступає в свій відділ
 
-Admin logs in → Picks department → Sees only their dept's users/tasks
-             → Can add tasks only for their department
-             → Can manage users only in their department
+Адмін логіниться → Вибирає відділ → Бачить тільки користувачів/завдання свого відділу
+                → Може додавати завдання тільки для свого відділу
+                → Може керувати користувачами тільки в своєму відділі
              
-Users earn XP → Level up → Get achievement notifications → Climb leaderboard
+Користувачі отримують XP → Піднімаються в рівні → Отримують сповіщення про досягнення → Піднімаються в таблиці лідерів
 ```
 
 ---
 
-## 📦 Files Modified/Created
+## 📦 Модифіковані/створені файли
 
-| File | What Changed |
+| Файл | Що змінилось |
 |------|-------------|
-| `bot.py` | ✅ Added XP system, new decorator, dept-aware admin panel |
-| `config.py` | ✅ Added XP configuration (activity weights, scaling, level cap) |
-| `database.py` | ✅ Added XP tables and leaderboard functions |
-| `messages.py` | ✅ NEW - Centralized system messages |
+| `bot.py` | ✅ Додана XP-система, новий декоратор, адмін-панель з контролем по відділам |
+| `config.py` | ✅ Додана конфігурація XP (ваги активності, масштабування, ліміт рівня) |
+| `database.py` | ✅ Додані таблиці XP та функції таблиці лідерів |
+| `messages.py` | ✅ НОВИЙ — Централізовані системні повідомлення |
 
 ---
 
-## 🚀 What You Can Do Now
+## 🚀 Що ти можеш робити тепер
 
-### For Users:
-- Earn XP by participating in your department
-- See your level and rank with `/xp`
-- View the leaderboard with `/leaderboard`
-- Get celebrated when you hit milestones!
+### Для користувачів:
+- Отримувати XP за участь у своєму відділі
+- Бачити свій рівень та ранг командою `/xp`
+- Дивитися таблицю лідерів командою `/leaderboard`
+- Отримувати святкування при досягненні віх!
 
-### For Admins:
-- Use `/admin` to manage your department
-- Add/delete tasks for your department only
-- View users in your department
-- Give out XP bonuses
-- Everything stays within your department boundary
+### Для адмінів:
+- Використовувати `/admin` для керування своїм відділом
+- Додавати/видаляти завдання тільки для свого відділу
+- Переглядати користувачів у своєму відділі
+- Видавати бонуси XP
+- Все залишається в межах своєї границі відділу
 
-### Configure It:
-- Change XP rewards in `config.py`
-- Adjust level scaling (difficulty curve)
-- Set maximum level (default: 100)
-- Customize milestone intervals
-
----
-
-## ✅ Quality Assurance
-
-All changes follow your architecture principles:
-- ✅ Business logic in Python, not in prompts
-- ✅ All configuration external (`config.py`)
-- ✅ Reusable functions, no hardcoding
-- ✅ Clean separation of concerns (decorators, filtering, rendering)
-- ✅ Deterministic and predictable behavior
+### Налаштування:
+- Змінювати нагороди за XP у `config.py`
+- Регулювати масштабування рівнів (крива складності)
+- Встановлювати максимальний рівень (за замовчуванням: 100)
+- Налаштовувати інтервали віх
 
 ---
 
-## 📝 Next Steps (Optional)
+## ✅ Контроль якості
 
-If you want to expand further:
-- [ ] Add daily/weekly XP bonus challenges
-- [ ] Create achievement tiers (Bronze, Silver, Gold badges)
-- [ ] Add XP decay or reset mechanics
-- [ ] Department-specific leaderboards
-- [ ] Admin moderator status (limited permissions)
+Всі зміни слідують твоїм принципам архітектури:
+- ✅ Бізнес-логіка в Python, а не в промптах
+- ✅ Вся конфігурація зовні (`config.py`)
+- ✅ Переиспользуемые функцiї, без хардкоду
+- ✅ Чистий поділ обов'язків (декоратори, фільтрування, відображення)
+- ✅ Детермінована та передбачувана поведінка
 
 ---
 
-**Everything is committed and ready to deploy!** 🎉
+## 📝 Наступні кроки (опціонально)
 
-Feel free to test it out or make adjustments. The code is clean, documented, and scalable.
+Якщо хочеш розширити функціонал:
+- [ ] Додати щоденні/тижневі бонусні виклики за XP
+- [ ] Створити рівні досягнень (Бронза, Срібло, Золото значки)
+- [ ] Додати механіку занепаду або скидання XP
+- [ ] Таблиці лідерів, специфічні для відділу
+- [ ] Статус модератора адміна (обмежені дозволи)
+
+---
+
+**Все закоммічено і готово до деплойменту!** 🎉
+
+Сміливо тестуй або роби коригування. Код чистий, задокументований та масштабується.
 

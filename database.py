@@ -562,48 +562,52 @@ def get_user_departments(user_id):
     """
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT departments_json FROM users WHERE user_id=?", (user_id,))
-    row = c.fetchone()
+    c.execute("SELECT department_id FROM users_departments WHERE user_id=?", (user_id,))
+    rows = c.fetchall()
     conn.close()
     
-    if not row or not row['departments_json']:
+    if not rows:
         return []
     
-    try:
-        return json.loads(row['departments_json'])
-    except:
-        return []
+    return sorted([row['department_id'] for row in rows])
 
 
 def add_user_department(user_id, dept_id):
     """Add department to user's list"""
-    depts = get_user_departments(user_id)
-    if dept_id not in depts:
-        depts.append(dept_id)
-        depts.sort()
-        conn = get_conn()
-        c = conn.cursor()
-        c.execute("UPDATE users SET departments_json=? WHERE user_id=?", (json.dumps(depts), user_id))
+    conn = get_conn()
+    c = conn.cursor()
+    
+    # Check if already exists
+    c.execute("SELECT COUNT(*) FROM users_departments WHERE user_id=? AND department_id=?", (user_id, dept_id))
+    if c.fetchone()[0] == 0:
+        # Insert new record
+        c.execute(
+            """INSERT INTO users_departments (user_id, department_id, dept_role, joined_at)
+               VALUES (?, ?, 'member', ?)""",
+            (user_id, dept_id, datetime.now().isoformat())
+        )
         conn.commit()
-        conn.close()
+    
+    conn.close()
 
 
 def remove_user_department(user_id, dept_id):
     """Remove department from user's list"""
-    depts = get_user_departments(user_id)
-    if dept_id in depts:
-        depts.remove(dept_id)
-        conn = get_conn()
-        c = conn.cursor()
-        c.execute("UPDATE users SET departments_json=? WHERE user_id=?", (json.dumps(depts), user_id))
-        conn.commit()
-        conn.close()
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM users_departments WHERE user_id=? AND department_id=?", (user_id, dept_id))
+    conn.commit()
+    conn.close()
 
 
 def has_user_department(user_id, dept_id):
     """Check if user is in department"""
-    depts = get_user_departments(user_id)
-    return dept_id in depts
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users_departments WHERE user_id=? AND department_id=?", (user_id, dept_id))
+    count = c.fetchone()[0]
+    conn.close()
+    return count > 0
 
 
 # ============ ROLE SYSTEM (GLOBAL) ============

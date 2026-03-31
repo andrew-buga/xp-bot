@@ -92,21 +92,21 @@ MESSAGES = {
     },
 
     "menu_prompt": {
-        "en": "📋 *Main Menu*\n\n✨ /tasks — view tasks\n⭐ /xp — your profile\n🏆 /leaderboard — leaderboard\n🎯 /idea — share an idea\n🌐 /start — change departments",
-        "ro": "📋 *Meniu Principal*\n\n✨ /tasks — vizualizare sarcini\n⭐ /xp — profilul tău\n🏆 /leaderboard — clasament\n🎯 /idea — partajează o idee\n🌐 /start — schimbă departamentele",
-        "uk": "📋 *Головне меню*\n\n✨ /tasks — завдання\n⭐ /xp — твій профіль\n🏆 /leaderboard — топ\n🎯 /idea — поділись ідеєю\n🌐 /start — змінити департаменти",
+        "en": "📋 *Main Menu*\n\n✨ /tasks — view tasks\n⭐ /info — your profile\n🏆 /leaderboard — leaderboard\n⚙️ /settings — change department\n❓ /help — help & commands\nℹ️ /about — about the bot\n🎯 /idea — share an idea",
+        "ro": "📋 *Meniu Principal*\n\n✨ /tasks — vizualizare sarcini\n⭐ /info — profilul tău\n🏆 /leaderboard — clasament\n⚙️ /settings — schimbă departamentul\n❓ /help — ajutor și comenzi\nℹ️ /about — despre bot\n🎯 /idea — partajează o idee",
+        "uk": "📋 *Головне меню*\n\n✨ /tasks — завдання\n⭐ /info — твій профіль\n🏆 /leaderboard — топ\n⚙️ /settings — змінити департамент\n❓ /help — допомога і команди\nℹ️ /about — про бота\n🎯 /idea — поділись ідеєю",
     },
 
     "welcome_multi_returning": {
-        "en": "👋 *Welcome back, {first_name}!*\n\n🏢 Your departments:\n{depts}\n\n✨ /tasks — tasks\n⭐ /xp — profile\n🏆 /leaderboard — leaderboard\n🎯 /idea — share an idea\n🌐 /start — change departments",
-        "ro": "👋 *Bine ai revenit, {first_name}!*\n\n🏢 Departamentele tale:\n{depts}\n\n✨ /tasks — sarcini\n⭐ /xp — profil\n🏆 /leaderboard — clasament\n🎯 /idea — partajează o idee\n🌐 /start — schimbă departamentele",
-        "uk": "👋 *Привіт знову, {first_name}!*\n\n🏢 Твої департаменти:\n{depts}\n\n✨ /tasks — завдання\n⭐ /xp — профіль\n🏆 /leaderboard — топ\n🎯 /idea — поділись ідеєю\n🌐 /start — змінити департаменти",
+        "en": "👋 *Welcome back, {first_name}!*\n\n🏢 Your departments:\n{depts}\n\n✨ /tasks — tasks\n⭐ /info — profile\n🏆 /leaderboard — leaderboard\n⚙️ /settings — change department\n❓ /help — help\nℹ️ /about — about bot\n🎯 /idea — share an idea",
+        "ro": "👋 *Bine ai revenit, {first_name}!*\n\n🏢 Departamentele tale:\n{depts}\n\n✨ /tasks — sarcini\n⭐ /info — profil\n🏆 /leaderboard — clasament\n⚙️ /settings — schimbă departamentul\n❓ /help — ajutor\nℹ️ /about — despre bot\n🎯 /idea — partajează o idee",
+        "uk": "👋 *Привіт знову, {first_name}!*\n\n🏢 Твої департаменти:\n{depts}\n\n✨ /tasks — завдання\n⭐ /info — профіль\n🏆 /leaderboard — топ\n⚙️ /settings — змінити департамент\n❓ /help — допомога\nℹ️ /about — про бота\n🎯 /idea — поділись ідеєю",
     },
 
     "dept_welcome": {
-        "en": "✅ *Great, {first_name}!*\n\n🐿 Welcome to ATUR! I'm Білка Валерій!\n\nYou're in department: *{emoji} {dept_name}*\n\nNow you can start completing tasks!\n\n✨ /tasks — task list\n⭐ /xp — your profile\n🏆 /leaderboard — top players",
-        "ro": "✅ *Grozav, {first_name}!*\n\n🐿 Bine ai venit la ATUR! Sunt Білка Валерій!\n\nEști în departamentul: *{emoji} {dept_name}*\n\nAcum poți începe să completezi sarcini!\n\n✨ /tasks — lista sarcinilor\n⭐ /xp — profilul tău\n🏆 /leaderboard — top jucători",
-        "uk": "✅ *Чудово, {first_name}!*\n\n🐿 Ласкаво просимо до ATUR! Я Білка Валерій!\n\nТи в департаменті: *{emoji} {dept_name}*\n\nТепер можеш розпочати виконувати завдання!\n\n✨ /tasks — список завдань\n⭐ /xp — твій профіль\n🏆 /leaderboard — топ гравців",
+        "en": "✅ *Great, {first_name}!*\n\n🐿 Welcome to ATUR! I'm Білка Валерій!\n\nYou're in department: *{emoji} {dept_name}*\n\nNow you can start completing tasks!\n\n✨ /tasks — task list\n⭐ /info — your profile\n🏆 /leaderboard — top players\n⚙️ /settings — change settings",
+        "ro": "✅ *Grozav, {first_name}!*\n\n🐿 Bine ai venit la ATUR! Sunt Білка Валерій!\n\nEști în departamentul: *{emoji} {dept_name}*\n\nAcum poți începe să completezi sarcini!\n\n✨ /tasks — lista sarcinilor\n⭐ /info — profilul tău\n🏆 /leaderboard — top jucători\n⚙️ /settings — schimbă setări",
+        "uk": "✅ *Чудово, {first_name}!*\n\n🐿 Ласкаво просимо до ATUR! Я Білка Валерій!\n\nТи в департаменті: *{emoji} {dept_name}*\n\nТепер можеш розпочати виконувати завдання!\n\n✨ /tasks — список завдань\n⭐ /info — твій профіль\n🏆 /leaderboard — топ гравців\n⚙️ /settings — змінити налаштування",
     },
     
     "welcome_returning": {

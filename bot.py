@@ -645,8 +645,9 @@ async def cmd_shop(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     register_user(user)
     lang = get_user_language(user.id)
     
+    push_nav(ctx, "menu")
     markup = InlineKeyboardMarkup([
-        [_btn(get_message("back_btn", lang), callback_data="menu_back")]
+        [_btn(get_message("back_btn", lang), callback_data="go_back")]
     ])
     
     await _reply(update,
@@ -662,8 +663,9 @@ async def cmd_inventory(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     register_user(user)
     lang = get_user_language(user.id)
     
+    push_nav(ctx, "menu")
     markup = InlineKeyboardMarkup([
-        [_btn(get_message("back_btn", lang), callback_data="menu_back")]
+        [_btn(get_message("back_btn", lang), callback_data="go_back")]
     ])
     
     await _reply(update,
@@ -679,8 +681,9 @@ async def cmd_achievements(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     register_user(user)
     lang = get_user_language(user.id)
     
+    push_nav(ctx, "menu")
     markup = InlineKeyboardMarkup([
-        [_btn(get_message("back_btn", lang), callback_data="menu_back")]
+        [_btn(get_message("back_btn", lang), callback_data="go_back")]
     ])
     
     await _reply(update,
@@ -696,10 +699,11 @@ async def cmd_idea(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     register_user(user)
     lang = get_user_language(user.id)
     
+    push_nav(ctx, "menu")
     ctx.user_data["submitting_idea"] = True
     
     markup = InlineKeyboardMarkup([
-        [_btn(get_message("back_btn", lang), callback_data="idea_cancel")]
+        [_btn(get_message("back_btn", lang), callback_data="go_back")]
     ])
     
     await _reply(update,
@@ -732,13 +736,14 @@ async def handle_idea_submission(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     }
     ctx.user_data.pop("submitting_idea", None)
     
+    push_nav(ctx, "idea")
     # Ask for anonymity choice
     markup = InlineKeyboardMarkup([
         [
             _btn(get_message("idea_btn_named", lang), callback_data="idea_named"),
             _btn(get_message("idea_btn_anon", lang), callback_data="idea_anon"),
         ],
-        [_btn(get_message("back_btn", lang), callback_data="idea_back")],
+        [_btn(get_message("back_btn", lang), callback_data="go_back")],
     ])
     
     await _reply(update,
@@ -972,6 +977,60 @@ async def _cleanup_wizard_prompts(ctx: ContextTypes.DEFAULT_TYPE, chat_id: int) 
             pass
 
 
+# ========== NAVIGATION STACK HELPERS ==========
+def push_nav(ctx: ContextTypes.DEFAULT_TYPE, screen_name: str):
+    """Push current screen to navigation history"""
+    if "nav_stack" not in ctx.user_data:
+        ctx.user_data["nav_stack"] = []
+    ctx.user_data["nav_stack"].append(screen_name)
+    logger.debug(f"Navigation stack: {ctx.user_data['nav_stack']}")
+
+
+def pop_nav(ctx: ContextTypes.DEFAULT_TYPE) -> str | None:
+    """Pop last screen from navigation history"""
+    if "nav_stack" not in ctx.user_data or not ctx.user_data["nav_stack"]:
+        return None
+    screen = ctx.user_data["nav_stack"].pop()
+    logger.debug(f"Navigation stack (after pop): {ctx.user_data['nav_stack']}")
+    return screen
+
+
+async def go_back(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Navigate back to previous screen or menu"""
+    prev_screen = pop_nav(ctx)
+    
+    if prev_screen is None:
+        # No history, go to menu
+        await cmd_menu(update, ctx)
+        return
+    
+    # Map screen names to command functions
+    screen_map = {
+        "menu": cmd_menu,
+        "tasks": cmd_tasks,
+        "shop": cmd_shop,
+        "inventory": cmd_inventory,
+        "achievements": cmd_achievements,
+        "about": cmd_about,
+        "help": cmd_help,
+        "info": cmd_info,
+        "settings": cmd_settings,
+        "leaderboard": cmd_leaderboard,
+        "idea": cmd_idea,
+        "idea_anon": lambda u, c: handle_idea_submission(u, c),  # Go back to step 1
+    }
+    
+    if prev_screen in screen_map:
+        try:
+            await screen_map[prev_screen](update, ctx)
+        except Exception as e:
+            logger.error(f"Error going back to {prev_screen}: {e}")
+            await cmd_menu(update, ctx)
+    else:
+        logger.warning(f"Unknown screen in navigation: {prev_screen}")
+        await cmd_menu(update, ctx)
+
+
 @rate_limit_user
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Startup flow: fully registered → welcome | has language → verify | new → select language"""
@@ -1012,8 +1071,9 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     lang = get_user_language(user.id)
     
+    push_nav(ctx, "menu")
     markup = InlineKeyboardMarkup([
-        [_btn(get_message("back_btn", lang), callback_data="menu_back")]
+        [_btn(get_message("back_btn", lang), callback_data="go_back")]
     ])
     
     await _reply(update, _get_text_setting("help_text"), reply_markup=markup, parse_mode="Markdown")
@@ -1056,8 +1116,9 @@ async def cmd_about(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ),
     }.get(lang, "🤖 XP Bot — Community motivation system")
     
+    push_nav(ctx, "menu")
     markup = InlineKeyboardMarkup([
-        [_btn(get_message("back_btn", lang), callback_data="menu_back")]
+        [_btn(get_message("back_btn", lang), callback_data="go_back")]
     ])
     
     await _reply(update, about_text, reply_markup=markup, parse_mode="Markdown")
@@ -1109,11 +1170,12 @@ async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     lang = get_user_language(user.id)
     
+    push_nav(ctx, "menu")
     # Show settings menu with options
     markup = InlineKeyboardMarkup([
         [_btn("🏢 Змінити департамент", callback_data="settings_depts")],
         [_btn("🌍 Змінити мову", callback_data="lang_select")],
-        [_btn("⬅ Назад", callback_data="menu_back")],
+        [_btn("⬅ Назад", callback_data="go_back")],
     ])
     
     settings_text = "⚙️ *Налаштування*\n\nВиберіть, що хочете змінити:"
@@ -1127,6 +1189,7 @@ async def cmd_leaderboard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user)
     
+    push_nav(ctx, "menu")
     depts = get_user_departments(user.id) or []
     departments = get_departments()
     
@@ -1139,7 +1202,7 @@ async def cmd_leaderboard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if dept['id'] in depts:
                 rows.append([_btn(f"📊 {dept['emoji']} {dept['name']}", callback_data=f"lb:dept_{dept['id']}")])
     
-    rows.append([_btn("⬅ Назад", callback_data="menu_back")])
+    rows.append([_btn("⬅ Назад", callback_data="go_back")])
     
     markup = InlineKeyboardMarkup(rows)
     text = "🏆 *Таблиця лідерів*\n\nВиберіть, чию таблицю хочете переглянути:"
@@ -1204,12 +1267,13 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _reply(update, get_message("dept_required", lang))
         return
     
+    push_nav(ctx, "menu")
     # Show category menu
     markup = InlineKeyboardMarkup([
         [_btn(get_message("tasks_easy_btn", lang), callback_data="tasks_easy")],
         [_btn(get_message("tasks_medium_btn", lang), callback_data="tasks_medium")],
         [_btn(get_message("tasks_hard_btn", lang), callback_data="tasks_hard")],
-        [_btn(get_message("back_btn", lang), callback_data="menu_back")],
+        [_btn(get_message("back_btn", lang), callback_data="go_back")],
     ])
     
     await _reply(update,
@@ -2389,37 +2453,14 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await cmd_settings(update, ctx)
         return
     
-    if data == "menu_back":
-        await cmd_menu(update, ctx)
-        return
-    
-    # Back buttons from various menus
-    if data == "idea_cancel":
+    # Unified back button handler
+    if data == "go_back":
+        # Clean up any pending operation state
         ctx.user_data.pop("submitting_idea", None)
         ctx.user_data.pop("idea_draft", None)
-        await cmd_menu(update, ctx)
-        return
-    
-    if data == "idea_back":
-        # Go back to idea text input step
-        user = query.from_user
-        lang = get_user_language(user.id)
-        ctx.user_data.pop("idea_draft", None)
-        ctx.user_data["submitting_idea"] = True
-        
-        markup = InlineKeyboardMarkup([
-            [_btn(get_message("back_btn", lang), callback_data="idea_cancel")]
-        ])
-        
-        await _edit_message_text(query,
-            get_message("idea_prompt", lang),
-            reply_markup=markup,
-            parse_mode="Markdown")
-        return
-    
-    if data == "submit_cancel":
         ctx.user_data.pop("submitting_task_id", None)
-        await cmd_menu(update, ctx)
+        
+        await go_back(update, ctx)
         return
 
     # Handle change departments button (legacy, from menu)
@@ -2480,8 +2521,9 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["submitting_task_id"] = task_id
         
         lang = get_user_language(user.id)
+        push_nav(ctx, "tasks")
         markup = InlineKeyboardMarkup([
-            [_btn(get_message("cancel_btn", lang), callback_data="submit_cancel")]
+            [_btn(get_message("cancel_btn", lang), callback_data="go_back")]
         ])
 
         await query.message.reply_text(

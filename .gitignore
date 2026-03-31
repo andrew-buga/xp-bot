@@ -4,3 +4,17 @@ __pycache__/
 .env
 .env.example
 bot_data.db
+
+# Analytics & runtime data
+analytics/
+supervision.log
+supervision_summary.json
+events.jsonl
+
+# Debug & test scripts (development only)
+test_*.py
+check_*.py
+register_*.py
+reset_*.py
+list_*.py
+add_admin_to_depts.py

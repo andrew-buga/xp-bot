@@ -2332,6 +2332,10 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data == "settings_depts_cancel":
         await cmd_settings(update, ctx)
         return
+    
+    if data == "menu_back":
+        await cmd_menu(update, ctx)
+        return
 
     # Handle change departments button (legacy, from menu)
     if data == "change_depts":

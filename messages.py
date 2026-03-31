@@ -343,6 +343,103 @@ MESSAGES = {
         "ro": "❌ Acțiunea curentă anulată.",
         "uk": "❌ Поточну дію скасовано.",
     },
+    
+    # ========== ADMIN/ERROR MESSAGES ==========
+    "user_not_found": {
+        "en": "❌ Error: user not found. Try /start",
+        "ro": "❌ Eroare: utilizatorul nu a fost găsit. Încearcă /start",
+        "uk": "❌ Помилка: користувач не знайдено. Спробуй /start",
+    },
+    
+    "dept_required": {
+        "en": "❌ First select your department. Click /start",
+        "ro": "❌ Mai întâi selectează-ți departamentul. Click /start",
+        "uk": "❌ Спочатку обери департамент через /start",
+    },
+    
+    "no_proof": {
+        "en": "❌ Send text or an image.",
+        "ro": "❌ Trimite text sau o imagine.",
+        "uk": "❌ Надішли текст або зображення.",
+    },
+    
+    "task_not_found": {
+        "en": "❌ Task not found. /tasks",
+        "ro": "❌ Sarcina nu a fost găsită. /tasks",
+        "uk": "❌ Завдання не знайдено. /tasks",
+    },
+    
+    "format_addproduct": {
+        "en": "❌ Format: /addproduct <price> <name> <description>",
+        "ro": "❌ Format: /addproduct <preț> <nume> <descriere>",
+        "uk": "❌ Формат: /addproduct <ціна> <назва> <опис>",
+    },
+    
+    "format_deltask": {
+        "en": "❌ Format: /deltask <task_id>",
+        "ro": "❌ Format: /deltask <task_id>",
+        "uk": "❌ Формат: /deltask <task_id>",
+    },
+    
+    "format_editproduct": {
+        "en": "❌ Format: /editproduct <product_id> <price> <name> <description>",
+        "ro": "❌ Format: /editproduct <product_id> <preț> <nume> <descriere>",
+        "uk": "❌ Формат: /editproduct <product_id> <ціна> <назва> <опис>",
+    },
+    
+    "format_givexp": {
+        "en": "❌ Format: /givexp <user_id> <amount>",
+        "ro": "❌ Format: /givexp <user_id> <cantitate>",
+        "uk": "❌ Формат: /givexp <user_id> <кількість>",
+    },
+    
+    "product_added": {
+        "en": "✅ Product #{product_id} added: {name} ({price} XP)",
+        "ro": "✅ Produs #{product_id} adăugat: {name} ({price} XP)",
+        "uk": "✅ Товар #{product_id} додано: {name} ({price} XP)",
+    },
+    
+    "product_deleted": {
+        "en": "✅ Product #{product_id} deleted.",
+        "ro": "✅ Produs #{product_id} șters.",
+        "uk": "✅ Товар #{product_id} видалено.",
+    },
+    
+    "product_updated": {
+        "en": "✅ Product #{product_id} updated: {name} ({price} XP)",
+        "ro": "✅ Produs #{product_id} actualizat: {name} ({price} XP)",
+        "uk": "✅ Товар #{product_id} оновлено: {name} ({price} XP)",
+    },
+    
+    "task_added": {
+        "en": "✅ Task #{task_id} added!\n📌 {title}\n💎 {xp} XP",
+        "ro": "✅ Sarcina #{task_id} adăugată!\n📌 {title}\n💎 {xp} XP",
+        "uk": "✅ Завдання #{task_id} додано!\n📌 {title}\n💎 {xp} XP",
+    },
+    
+    "task_deleted": {
+        "en": "✅ Task #{task_id} deactivated.",
+        "ro": "✅ Sarcina #{task_id} dezactivată.",
+        "uk": "✅ Завдання #{task_id} деактивовано.",
+    },
+    
+    "xp_given": {
+        "en": "✅ Awarded {amount} XP → {user_id}",
+        "ro": "✅ Acordat {amount} XP → {user_id}",
+        "uk": "✅ Нараховано {amount} XP → {user_id}",
+    },
+    
+    "xp_removed": {
+        "en": "✅ Removed {amount} XP → {user_id}",
+        "ro": "✅ Eliminat {amount} XP → {user_id}",
+        "uk": "✅ Знято {amount} XP → {user_id}",
+    },
+    
+    "bot_infoedit": {
+        "en": "🧩 *Bot Information Editor*",
+        "ro": "🧩 *Editor Informații Bot*",
+        "uk": "🧩 *Редактор інформації бота*",
+    },
 }
 
 

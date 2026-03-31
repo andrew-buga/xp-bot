@@ -311,7 +311,9 @@ def admin_only(func):
     @wraps(func)
     async def wrapper(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not _is_admin(update):
-            await _reply(update, "❌ Тільки для адміністраторів!")
+            user = update.effective_user
+            lang = get_user_language(user.id)
+            await _reply(update, get_message("admin_only", lang))
             return
         return await func(update, ctx)
     return wrapper
@@ -323,7 +325,9 @@ def admin_with_dept_check(func):
     @wraps(func)
     async def wrapper(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not _is_admin(update):
-            await _reply(update, "❌ Тільки для адміністраторів!")
+            user = update.effective_user
+            lang = get_user_language(user.id)
+            await _reply(update, get_message("admin_only", lang))
             return
         
         user = update.effective_user
@@ -357,7 +361,8 @@ def requires_dept_and_verified(func):
         
         db_user = get_user(user.id)
         if not db_user:
-            await _reply(update, "❌ Помилка: користувач не знайдено. Спробуй /start")
+            lang = get_user_language(user.id) if user.id else "uk"
+            await _reply(update, get_message("user_not_found", lang))
             return
         
         # Check if user has department selected
@@ -826,6 +831,8 @@ async def shop_callback_handler(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @admin_only
 @rate_limit_user
 async def cmd_addproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    lang = get_user_language(user.id)
     try:
         price = int(ctx.args[0])
         name = ctx.args[1]
@@ -833,35 +840,39 @@ async def cmd_addproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not name or price <= 0:
             raise ValueError
     except (IndexError, ValueError):
-        await _reply(update, "❌ Формат: /addproduct <ціна> <назва> <опис>")
+        await _reply(update, get_message("format_addproduct", lang))
         return
     product_id = add_product(name, description, price)
-    await _reply(update, f"✅ Товар #{product_id} додано: {name} ({price} XP)")
+    await _reply(update, get_message("product_added", lang, product_id=product_id, name=name, price=price))
 
 
 @admin_only
 @rate_limit_user
 async def cmd_delproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    lang = get_user_language(user.id)
     try:
         product_id = int(ctx.args[0])
         delete_product(product_id)
-        await _reply(update, f"✅ Товар #{product_id} видалено.")
+        await _reply(update, get_message("product_deleted", lang, product_id=product_id))
     except (IndexError, ValueError):
-        await _reply(update, "❌ Формат: /delproduct <product_id>")
+        await _reply(update, get_message("format_addproduct", lang))
 
 
 @admin_only
 @rate_limit_user
 async def cmd_editproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    lang = get_user_language(user.id)
     try:
         product_id = int(ctx.args[0])
         price = int(ctx.args[1])
         name = ctx.args[2]
         description = " ".join(ctx.args[3:])
         update_product(product_id, name=name, description=description, price=price)
-        await _reply(update, f"✅ Товар #{product_id} оновлено: {name} ({price} XP)")
+        await _reply(update, get_message("product_updated", lang, product_id=product_id, name=name, price=price))
     except (IndexError, ValueError):
-        await _reply(update, "❌ Формат: /editproduct <product_id> <ціна> <назва> <опис>")
+        await _reply(update, get_message("format_editproduct", lang))
 
 
 def _admin_menu_markup(dept_id: int | None = None) -> InlineKeyboardMarkup:
@@ -1115,7 +1126,7 @@ async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     depts = get_user_departments(user.id)
     
     if not depts:
-        await _reply(update, "❌ Спочатку обери департамент через /start")
+        await _reply(update, get_message("dept_required", lang))
         return
     
     text = get_message("menu_prompt", lang)
@@ -1138,7 +1149,8 @@ async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     db_user = get_user(user.id)
     
     if db_user["is_banned"]:
-        await _reply(update, "❌ Ви забанені")
+        lang = get_user_language(user.id)
+        await _reply(update, get_message("banned", lang))
         return
     
     _clear_wizard(ctx)
@@ -1154,21 +1166,22 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user)
     
+    lang = get_user_language(user.id)
     db_user = get_user(user.id)
     user_depts = get_user_departments(user.id)
     if not user_depts:
-        await _reply(update, "❌ Спочатку обери департамент через /start")
+        await _reply(update, get_message("dept_required", lang))
         return
     
     # Show category menu
     markup = InlineKeyboardMarkup([
-        [_btn("📗 Легкі", callback_data="tasks_easy")],
-        [_btn("📙 Середні", callback_data="tasks_medium")],
-        [_btn("📕 Важкі", callback_data="tasks_hard")],
+        [_btn(get_message("tasks_easy_btn", lang), callback_data="tasks_easy")],
+        [_btn(get_message("tasks_medium_btn", lang), callback_data="tasks_medium")],
+        [_btn(get_message("tasks_hard_btn", lang), callback_data="tasks_hard")],
     ])
     
     await _reply(update,
-        "📋 *Вибери складність завдань:*",
+        get_message("tasks_select_difficulty", lang),
         reply_markup=markup,
         parse_mode="Markdown")
 
@@ -1271,20 +1284,24 @@ async def cmd_xp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @rate_limit_user
 async def cmd_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    lang = get_user_language(user.id)
     had_submission = bool(ctx.user_data.pop("submitting_task_id", None))
     had_wizard = bool(ctx.user_data.pop("admin_wizard", None))
 
     if had_submission or had_wizard:
-        await _reply(update, "❌ Поточну дію скасовано.")
+        await _reply(update, get_message("cancel_success", lang))
     else:
-        await _reply(update, "Немає активної дії для скасування.")
+        await _reply(update, get_message("cancel_no_action", lang))
 
 
 @admin_only
 @rate_limit_user
 async def cmd_bot_infoedit(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    lang = get_user_language(user.id)
     _clear_wizard(ctx)
-    await _reply(update, "🧩 *Редактор інформації бота*", reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
+    await _reply(update, get_message("bot_infoedit", lang), reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
 
 
 @admin_only
@@ -1320,6 +1337,8 @@ async def cmd_help_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 @admin_only
 @rate_limit_user
 async def cmd_addtask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    lang = get_user_language(user.id)
     raw = " ".join(ctx.args)
     try:
         xp_str, rest = raw.split(" ", 1)
@@ -1330,42 +1349,47 @@ async def cmd_addtask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not title or xp <= 0:
             raise ValueError
     except ValueError:
-        await _reply(
-            update,
-            "❌ Формат: /addtask <XP> <назва> | <опис>\n"
-            "Приклад: /addtask 50 Написати відгук | Напиши відгук про бот",
-        )
+        format_text = {
+            "en": "❌ Format: /addtask <XP> <name> | <description>\nExample: /addtask 50 Write a review | Write a review about the bot",
+            "ro": "❌ Format: /addtask <XP> <nume> | <descriere>\nExemplu: /addtask 50 Scrie o recenzie | Scrie o recenzie despre bot",
+            "uk": "❌ Формат: /addtask <XP> <назва> | <опис>\nПриклад: /addtask 50 Написати відгук | Напиши відгук про бот",
+        }.get(lang, "❌ Format: /addtask <XP> <name> | <description>")
+        await _reply(update, format_text)
         return
 
     task_id = add_task(title, description, xp)
-    await _reply(update, f"✅ Завдання #{task_id} додано!\n📌 {title}\n💎 {xp} XP")
+    await _reply(update, get_message("task_added", lang, task_id=task_id, title=title, xp=xp))
 
 
 @admin_only
 @rate_limit_user
 async def cmd_deltask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    lang = get_user_language(user.id)
     try:
         task_id = int(ctx.args[0])
         delete_task(task_id)
-        await _reply(update, f"✅ Завдання #{task_id} деактивовано.")
+        await _reply(update, get_message("task_deleted", lang, task_id=task_id))
     except (IndexError, ValueError):
-        await _reply(update, "❌ Формат: /deltask <task_id>")
+        await _reply(update, get_message("format_deltask", lang))
 
 
 @admin_only
 @rate_limit_user
 async def cmd_givexp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    lang = get_user_language(user.id)
     try:
         uid = int(ctx.args[0])
         amount = int(ctx.args[1])
         if amount >= 0:
             add_xp(uid, amount)
-            await _reply(update, f"✅ Нараховано {amount} XP -> {uid}")
+            await _reply(update, get_message("xp_given", lang, amount=amount, user_id=uid))
         else:
             admin_subtract_xp(uid, -amount)
-            await _reply(update, f"✅ Знято {-amount} XP -> {uid}")
+            await _reply(update, get_message("xp_removed", lang, amount=-amount, user_id=uid))
     except (IndexError, ValueError):
-        await _reply(update, "❌ Формат: /givexp <user_id> <кількість>")
+        await _reply(update, get_message("format_givexp", lang))
 
 
 @admin_only
@@ -2498,7 +2522,8 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     task = get_task(task_id)
 
     if not task:
-        await _reply(update, "❌ Завдання не знайдено. /tasks")
+        lang = get_user_language(user.id)
+        await _reply(update, get_message("task_not_found", lang))
         ctx.user_data.pop("submitting_task_id", None)
         return
 
@@ -2511,7 +2536,8 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         proof_file_id = update.message.document.file_id
 
     if not proof_text and not proof_file_id:
-        await _reply(update, "❌ Надішли текст або зображення.")
+        lang = get_user_language(user.id)
+        await _reply(update, get_message("no_proof", lang))
         return
 
     sub_id = add_submission(user.id, task_id, proof_text, proof_file_id)

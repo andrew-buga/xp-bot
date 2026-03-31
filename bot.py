@@ -1076,7 +1076,8 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [_btn(get_message("back_btn", lang), callback_data="go_back")]
     ])
     
-    await _reply(update, _get_text_setting("help_text"), reply_markup=markup, parse_mode="Markdown")
+    help_text = f"{get_message('help_header', lang)}\n\n{get_message('help_content', lang)}"
+    await _reply(update, help_text, reply_markup=markup, parse_mode="Markdown")
 
 
 @rate_limit_user
@@ -1085,36 +1086,7 @@ async def cmd_about(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     lang = get_user_language(user.id)
     
-    about_text = {
-        "uk": (
-            "🤖 *Про XP Bot*\n\n"
-            "Бот для мотивації спільноти через систему XP.\n\n"
-            "✨ *Можливості:*\n"
-            "• Завдання з винагородами\n"
-            "• Система магазину (kupuj z XP)\n"
-            "• Таблиця лідерів\n"
-            "• Профіль та статистика\n\n"
-            "🚀 *Как почати:*\n"
-            "1. /start — реєстрація\n"
-            "2. /tasks — список завдань\n"
-            "3. /leaderboard — таблиця лідерів\n\n"
-            "❓ Питання? Зверніться до адміна."
-        ),
-        "en": (
-            "🤖 *About XP Bot*\n\n"
-            "A bot to motivate your community through an XP system.\n\n"
-            "✨ *Features:*\n"
-            "• Tasks with rewards\n"
-            "• Shop system (spend XP)\n"
-            "• Leaderboard\n"
-            "• Profile & stats\n\n"
-            "🚀 *Getting started:*\n"
-            "1. /start — register\n"
-            "2. /tasks — view tasks\n"
-            "3. /leaderboard — top users\n\n"
-            "❓ Questions? Contact admin."
-        ),
-    }.get(lang, "🤖 XP Bot — Community motivation system")
+    about_text = f"{get_message('about_header', lang)}\n\n{get_message('about_content', lang)}"
     
     push_nav(ctx, "menu")
     markup = InlineKeyboardMarkup([
@@ -1144,19 +1116,21 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     joined_date = db_user['joined_at'][:10] if db_user['joined_at'] else "N/A"
     
     # Format department list
-    dept_str = "\n".join([f"  • {name}" for name in dept_names]) if dept_names else "Не обрано"
+    dept_str = "\n".join([f"  • {name}" for name in dept_names]) if dept_names else get_message("info_none_selected", lang)
+    
+    verified_status = get_message("info_verified_yes", lang) if db_user.get('is_verified') else get_message("info_verified_no", lang)
     
     text = (
-        f"👤 *Мій профіль*\n\n"
-        f"🆔 ID: `{user.id}`\n"
-        f"📝 Ім'я: {user.first_name or 'N/A'}\n"
-        f"📅 Дата реєстрації: {joined_date}\n"
-        f"✔️ Верифіковано: {'Так' if db_user.get('is_verified') else 'Ні'}\n\n"
-        f"💎 *XP & Статистика:*\n"
-        f"• Поточний XP: {db_user['xp']}\n"
-        f"• Всього заробив: {db_user['total_xp']}\n"
-        f"• Витратив: {db_user['total_xp'] - db_user['spendable_xp']}\n\n"
-        f"🏢 *Департаменти:*\n{dept_str}"
+        f"{get_message('info_header', lang)}\n\n"
+        f"{get_message('info_id', lang)}: `{user.id}`\n"
+        f"{get_message('info_name', lang)}: {user.first_name or 'N/A'}\n"
+        f"{get_message('info_registered', lang)}: {joined_date}\n"
+        f"{get_message('info_verified', lang)}: {verified_status}\n\n"
+        f"{get_message('info_xp_section', lang)}\n"
+        f"• {get_message('info_xp_current', lang)}: {db_user['xp']}\n"
+        f"• {get_message('info_xp_total', lang)}: {db_user['total_xp']}\n"
+        f"• {get_message('info_xp_spent', lang)}: {db_user['total_xp'] - db_user['spendable_xp']}\n\n"
+        f"{get_message('info_departments', lang)}\n{dept_str}"
     )
     
     await _reply(update, text, parse_mode="Markdown")
@@ -1173,12 +1147,12 @@ async def cmd_settings(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     push_nav(ctx, "menu")
     # Show settings menu with options
     markup = InlineKeyboardMarkup([
-        [_btn("🏢 Змінити департамент", callback_data="settings_depts")],
-        [_btn("🌍 Змінити мову", callback_data="lang_select")],
-        [_btn("⬅ Назад", callback_data="go_back")],
+        [_btn(get_message("settings_dept_btn", lang), callback_data="settings_depts")],
+        [_btn(get_message("settings_lang_btn", lang), callback_data="lang_select")],
+        [_btn(get_message("back_btn", lang), callback_data="go_back")],
     ])
     
-    settings_text = "⚙️ *Налаштування*\n\nВиберіть, що хочете змінити:"
+    settings_text = f"{get_message('settings_header', lang)}\n\n{get_message('settings_prompt', lang)}"
     
     await _reply(update, settings_text, reply_markup=markup, parse_mode="Markdown")
 
@@ -1189,25 +1163,27 @@ async def cmd_leaderboard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user)
     
+    lang = get_user_language(user.id)
     push_nav(ctx, "menu")
     depts = get_user_departments(user.id) or []
     departments = get_departments()
     
     # Build keyboard with department options + global option
     rows = []
-    rows.append([_btn("🌍 Загальна таблиця", callback_data="lb:global")])
+    rows.append([_btn(get_message("leaderboard_global_btn", lang), callback_data="lb:global")])
     
     if depts and departments:
         for dept in departments:
             if dept['id'] in depts:
-                rows.append([_btn(f"📊 {dept['emoji']} {dept['name']}", callback_data=f"lb:dept_{dept['id']}")])
+                dept_label = get_message("leaderboard_department", lang, dept=f"{dept['emoji']} {dept['name']}")
+                rows.append([_btn(dept_label, callback_data=f"lb:dept_{dept['id']}")])
     
-    rows.append([_btn("⬅ Назад", callback_data="go_back")])
+    rows.append([_btn(get_message("back_btn", lang), callback_data="go_back")])
     
     markup = InlineKeyboardMarkup(rows)
-    text = "🏆 *Таблиця лідерів*\n\nВиберіть, чию таблицю хочете переглянути:"
+    header = f"{get_message('leaderboard_header', lang)}\n{get_message('leaderboard_prompt', lang)}"
     
-    await _reply(update, text, reply_markup=markup, parse_mode="Markdown")
+    await _reply(update, header, reply_markup=markup, parse_mode="Markdown")
 
 
 @rate_limit_user
@@ -2440,11 +2416,11 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Add Done button
         rows.append([_btn(get_message("dept_btn_done", lang), callback_data="dept_done")])
         
-        back_text = "⬅ Back" if lang == "en" else "⬅ Înapoi" if lang == "ro" else "⬅ Назад"
-        rows.append([_btn(back_text, callback_data="settings_depts_cancel")])
+        rows.append([_btn(get_message("back_btn", lang), callback_data="settings_depts_cancel")])
         
+        dept_change_prompt = get_message("dept_multi_select", lang)
         await _edit_message_text(query,
-            "🏢 *Змінити департамент*\n\nВиберіть свої департаменти:",
+            dept_change_prompt,
             reply_markup=InlineKeyboardMarkup(rows),
             parse_mode="Markdown")
         return

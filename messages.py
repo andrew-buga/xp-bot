@@ -447,6 +447,324 @@ MESSAGES = {
         "uk": "🧩 *Редактор інформації бота*",
     },
     
+    # ========== USER PROFILE & INFO ==========
+    "info_header": {
+        "en": "👤 *My profile*",
+        "ro": "👤 *Profilul meu*",
+        "uk": "👤 *Мій профіль*",
+    },
+    
+    "info_id": {
+        "en": "🆔 ID",
+        "ro": "🆔 ID",
+        "uk": "🆔 ID",
+    },
+    
+    "info_name": {
+        "en": "📝 Name",
+        "ro": "📝 Nume",
+        "uk": "📝 Ім'я",
+    },
+    
+    "info_username": {
+        "en": "🔗 Username",
+        "ro": "🔗 Utilizator",
+        "uk": "🔗 Користувач",
+    },
+    
+    "info_registered": {
+        "en": "📅 Registered",
+        "ro": "📅 Înregistrat",
+        "uk": "📅 Дата реєстрації",
+    },
+    
+    "info_verified": {
+        "en": "✔️ Verified",
+        "ro": "✔️ Verificat",
+        "uk": "✔️ Верифіковано",
+    },
+    
+    "info_verified_yes": {
+        "en": "Yes",
+        "ro": "Da",
+        "uk": "Так",
+    },
+    
+    "info_verified_no": {
+        "en": "No",
+        "ro": "Nu",
+        "uk": "Ні",
+    },
+    
+    "info_xp_section": {
+        "en": "💎 *XP & Statistics*",
+        "ro": "💎 *XP & Statistici*",
+        "uk": "💎 *XP & Статистика*",
+    },
+    
+    "info_xp_current": {
+        "en": "Current XP",
+        "ro": "XP curent",
+        "uk": "Поточний XP",
+    },
+    
+    "info_xp_total": {
+        "en": "Total earned",
+        "ro": "Total câștigat",
+        "uk": "Всього заробив",
+    },
+    
+    "info_xp_spent": {
+        "en": "Spent",
+        "ro": "Cheltuiți",
+        "uk": "Витратив",
+    },
+    
+    "info_departments": {
+        "en": "🏢 *Departments*",
+        "ro": "🏢 *Departamente*",
+        "uk": "🏢 *Департаменти*",
+    },
+    
+    "info_none_selected": {
+        "en": "Not selected",
+        "ro": "Neselecționat",
+        "uk": "Не обрано",
+    },
+    
+    # ========== SETTINGS & LANGUAGE ==========
+    "settings_header": {
+        "en": "⚙️ *Settings*",
+        "ro": "⚙️ *Setări*",
+        "uk": "⚙️ *Налаштування*",
+    },
+    
+    "settings_prompt": {
+        "en": "Select what you want to change:",
+        "ro": "Selectează ce vrei să schimbi:",
+        "uk": "Виберіть, що хочете змінити:",
+    },
+    
+    "settings_dept_btn": {
+        "en": "🏢 Change Department",
+        "ro": "🏢 Schimbă Departament",
+        "uk": "🏢 Змінити департамент",
+    },
+    
+    "settings_lang_btn": {
+        "en": "🌍 Change Language",
+        "ro": "🌍 Schimbă Limba",
+        "uk": "🌍 Змінити мову",
+    },
+    
+    # ========== LEADERBOARD ==========
+    "leaderboard_header": {
+        "en": "🏆 *Leaderboard*",
+        "ro": "🏆 *Clasament*",
+        "uk": "🏆 *Таблиця лідерів*",
+    },
+    
+    "leaderboard_prompt": {
+        "en": "Select whose leaderboard to view:",
+        "ro": "Selectează al cui clasament să vezi:",
+        "uk": "Виберіть чию таблицю хочете переглянути:",
+    },
+    
+    "leaderboard_global_btn": {
+        "en": "🌍 Global Leaderboard",
+        "ro": "🌍 Clasament Global",
+        "uk": "🌍 Загальна таблиця",
+    },
+    
+    "leaderboard_department": {
+        "en": "📊 {dept} Leaderboard",
+        "ro": "📊 Clasament {dept}",
+        "uk": "📊 Таблиця {dept}",
+    },
+    
+    # ========== HELP & ABOUT ==========
+    "help_header": {
+        "en": "📖 *How it works*",
+        "ro": "📖 *Cum funcționează*",
+        "uk": "📖 *Як це працює*",
+    },
+    
+    "help_content": {
+        "en": (
+            "1️⃣ View tasks: /tasks\n"
+            "2️⃣ Complete task\n"
+            "3️⃣ Click «📤 Submit»\n"
+            "4️⃣ Send proof (screenshot or text)\n"
+            "5️⃣ Admin verifies & awards XP\n\n"
+            "📊 Check your rank: /xp\n"
+            "🏆 View leaderboard: /leaderboard"
+        ),
+        "ro": (
+            "1️⃣ Vizualizează sarcini: /tasks\n"
+            "2️⃣ Finalizează sarcina\n"
+            "3️⃣ Apasă «📤 Trimite»\n"
+            "4️⃣ Trimite dovadă (captură sau text)\n"
+            "5️⃣ Admin verifică și acordă XP\n\n"
+            "📊 Verifică-ți rangul: /xp\n"
+            "🏆 Vezi clasamentul: /leaderboard"
+        ),
+        "uk": (
+            "1️⃣ Переглянь завдання: /tasks\n"
+            "2️⃣ Виконай завдання\n"
+            "3️⃣ Натисни «📤 Здати»\n"
+            "4️⃣ Надішли підтвердження (скріншот або текст)\n"
+            "5️⃣ Адмін перевірить і нарахує XP\n\n"
+            "📊 Переглянь свій рейтинг: /xp\n"
+            "🏆 Топ учасників: /leaderboard"
+        ),
+    },
+    
+    "about_header": {
+        "en": "🤖 *About XP Bot*",
+        "ro": "🤖 *Despre XP Bot*",
+        "uk": "🤖 *Про XP Bot*",
+    },
+    
+    "about_content": {
+        "en": (
+            "A bot to motivate your community through an XP system.\n\n"
+            "✨ *Features:*\n"
+            "• Tasks with rewards\n"
+            "• Shop system\n"
+            "• Leaderboard\n"
+            "• Profile & stats\n\n"
+            "🚀 *Getting started:*\n"
+            "1. /start — register\n"
+            "2. /tasks — view tasks\n"
+            "3. /leaderboard — top users\n\n"
+            "❓ Questions? Contact admin."
+        ),
+        "ro": (
+            "Un bot pentru motivarea comunității prin sistem XP.\n\n"
+            "✨ *Funcții:*\n"
+            "• Sarcini cu recompense\n"
+            "• Sistem magazin\n"
+            "• Clasament\n"
+            "• Profil & statistici\n\n"
+            "🚀 *Primii pași:*\n"
+            "1. /start — înregistrare\n"
+            "2. /tasks — vizualizează sarcini\n"
+            "3. /leaderboard — utilizatori top\n\n"
+            "❓ Întrebări? Contactează adminul."
+        ),
+        "uk": (
+            "Бот для мотивації спільноти через систему XP.\n\n"
+            "✨ *Можливості:*\n"
+            "• Завдання з винагородами\n"
+            "• Система магазину\n"
+            "• Таблиця лідерів\n"
+            "• Профіль та статистика\n\n"
+            "🚀 *Як почати:*\n"
+            "1. /start — реєстрація\n"
+            "2. /tasks — список завдань\n"
+            "3. /leaderboard — топ учасників\n\n"
+            "❓ Питання? Зверніться до адміна."
+        ),
+    },
+    
+    # ========== ADMIN & SHOP ==========
+    "admin_panel_header": {
+        "en": "🛠 *Admin Panel*",
+        "ro": "🛠 *Panou Admin*",
+        "uk": "🛠 *Адмін-панель*",
+    },
+    
+    "shop_placeholder": {
+        "en": "🛒 *Shop*\n\nCheck back soon for rewards!",
+        "ro": "🛒 *Magazin*\n\nVerifică din nou în curând pentru recompense!",
+        "uk": "🛒 *Магазин*\n\nПовернись скоро для нагород!",
+    },
+    
+    "inventory_placeholder": {
+        "en": "📦 *Inventory*\n\nYour purchased items will appear here.",
+        "ro": "📦 *Inventar*\n\nElementele achiziționate vor apărea aici.",
+        "uk": "📦 *Інвентар*\n\nТвої придбані предмети з'являтися тут.",
+    },
+    
+    "achievements_placeholder": {
+        "en": "🏅 *Achievements*\n\nUnlock achievements by completing tasks!",
+        "ro": "🏅 *Realizări*\n\nDeblochează realizări finalizând sarcini!",
+        "uk": "🏅 *Досягнення*\n\nРозблокуй досягнення виконуючи завдання!",
+    },
+    
+    # ========== ERROR & CONFIRMATION ==========
+    "admin_only": {
+        "en": "❌ Admin only",
+        "ro": "❌ Doar pentru admini",
+        "uk": "❌ Тільки для адмінів",
+    },
+    
+    "dept_required": {
+        "en": "⚠️ First select your department. Click /start",
+        "ro": "⚠️ Mai întâi selectează-ți departamentul. Click /start",
+        "uk": "⚠️ Спочатку обери департамент. Напиши /start",
+    },
+    
+    "banned": {
+        "en": "🚫 You are banned from using this bot.",
+        "ro": "🚫 Ești interzis să folosești acest bot.",
+        "uk": "🚫 Ти заблокований у цьому боті.",
+    },
+    
+    "cancel_success": {
+        "en": "✅ Cancelled. Back to menu.",
+        "ro": "✅ Anulat. Înapoi la meniu.",
+        "uk": "✅ Скасовано. Назад до меню.",
+    },
+    
+    "cancel_no_action": {
+        "en": "ℹ️ Nothing to cancel.",
+        "ro": "ℹ️ Nimic de anulat.",
+        "uk": "ℹ️ Нічого скасовувати.",
+    },
+    
+    "no_proof": {
+        "en": "❌ Send text or an image.",
+        "ro": "❌ Trimite text sau o imagine.",
+        "uk": "❌ Надішли текст або зображення.",
+    },
+    
+    "task_not_found": {
+        "en": "❌ Task not found.",
+        "ro": "❌ Sarcina nu a fost găsită.",
+        "uk": "❌ Завдання не знайдено.",
+    },
+    
+    "user_not_found": {
+        "en": "❌ User not found.",
+        "ro": "❌ Utilizatorul nu a fost găsit.",
+        "uk": "❌ Користувач не знайден.",
+    },
+    
+    "format_addproduct": {
+        "en": "❌ Format: /addproduct <name> <xp>\nExample: /addproduct Laptop 500",
+        "ro": "❌ Format: /addproduct <nume> <xp>\nExemplu: /addproduct Laptop 500",
+        "uk": "❌ Формат: /addproduct <ім'я> <xp>\nПриклад: /addproduct Ноутбук 500",
+    },
+    
+    "format_deltask": {
+        "en": "❌ Format: /deltask <task_id>",
+        "ro": "❌ Format: /deltask <task_id>",
+        "uk": "❌ Формат: /deltask <task_id>",
+    },
+    
+    "format_editproduct": {
+        "en": "❌ Format: /editproduct <id> <name> <xp>",
+        "ro": "❌ Format: /editproduct <id> <nume> <xp>",
+        "uk": "❌ Формат: /editproduct <id> <ім'я> <xp>",
+    },
+    
+    "format_givexp": {
+        "en": "❌ Format: /givexp <user_id> <amount>",
+        "ro": "❌ Format: /givexp <user_id> <suma>",
+        "uk": "❌ Формат: /givexp <user_id> <кількість>",
+    },
+    
     "back_btn": {
         "en": "⬅ Back",
         "ro": "⬅ Înapoi",

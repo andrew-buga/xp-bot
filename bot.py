@@ -900,7 +900,7 @@ async def cmd_editproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _reply(update, get_message("format_editproduct", lang))
 
 
-def _admin_menu_markup(dept_id: int | None = None) -> InlineKeyboardMarkup:
+def _admin_menu_markup(lang: str = "uk", dept_id: int | None = None) -> InlineKeyboardMarkup:
     """Build admin menu. If dept_id provided, shows dept-specific options."""
     dept_info = ""
     if dept_id:
@@ -909,14 +909,14 @@ def _admin_menu_markup(dept_id: int | None = None) -> InlineKeyboardMarkup:
     
     return InlineKeyboardMarkup(
         [
-            [_btn("➕ Додати завдання", callback_data=f"a:add:{dept_id or 'g'}")],
-            [_btn("🗑 Видалити завдання", callback_data=f"a:dellist:0:{f'd{dept_id}' if dept_id else 'g'}")],
-            [_btn("👥 Користувачі", callback_data="a:users:0")],
-            [_btn("💡 Ідеї", callback_data=f"a:ideas:0:{f'd{dept_id}' if dept_id else 'g'}")],
-            [_btn("🎁 Нарахувати XP", callback_data=f"a:xp:{dept_id or 'g'}")],
-            [_btn("📊 Статистика", callback_data=f"a:stats:{dept_id or 'g'}")],
-            [_btn("🛒 Магазин товарів", callback_data="a:shop_list")],
-            [_btn("🧩 Редагувати інфо бота", callback_data="be:menu")],
+            [_btn(get_message("admin_add_task_btn", lang), callback_data=f"a:add:{dept_id or 'g'}")],
+            [_btn(get_message("admin_delete_task_btn", lang), callback_data=f"a:dellist:0:{f'd{dept_id}' if dept_id else 'g'}")],
+            [_btn(get_message("admin_users_btn", lang), callback_data="a:users:0")],
+            [_btn(get_message("admin_ideas_btn", lang), callback_data=f"a:ideas:0:{f'd{dept_id}' if dept_id else 'g'}")],
+            [_btn(get_message("admin_xp_btn", lang), callback_data=f"a:xp:{dept_id or 'g'}")],
+            [_btn(get_message("admin_stats_btn", lang), callback_data=f"a:stats:{dept_id or 'g'}")],
+            [_btn(get_message("admin_shop_btn", lang), callback_data="a:shop_list")],
+            [_btn(get_message("admin_edit_info_btn", lang), callback_data="be:menu")],
         ]
     )
 
@@ -938,14 +938,14 @@ def _get_text_setting(key: str, **fmt) -> str:
         return raw
 
 
-def _bot_infoedit_markup() -> InlineKeyboardMarkup:
+def _bot_infoedit_markup(lang: str = "uk") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [_btn("✍️ Змінити привітання /start", callback_data="be:edit:welcome_text")],
-            [_btn("✍️ Змінити довідку /help", callback_data="be:edit:help_text")],
-            [_btn("👁️ Переглянути поточні тексти", callback_data="be:preview")],
-            [_btn("ℹ️ Що змінюється тільки через BotFather", callback_data="be:limits")],
-            [_btn("⬅ В адмін-меню", callback_data="a:menu")],
+            [_btn(get_message("admin_edit_text_btn", lang), callback_data="be:edit:welcome_text")],
+            [_btn(get_message("admin_edit_help_btn", lang), callback_data="be:edit:help_text")],
+            [_btn(get_message("admin_preview_btn", lang), callback_data="be:preview")],
+            [_btn(get_message("admin_botfather_info", lang), callback_data="be:limits")],
+            [_btn(get_message("admin_back_menu", lang), callback_data="a:menu")],
         ]
     )
 
@@ -1223,10 +1223,11 @@ async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _reply(update, get_message("banned", lang))
         return
     
+    lang = get_user_language(user.id)
     _clear_wizard(ctx)
     await _reply(update,
-        "🛠 *Адмін-панель*",
-        reply_markup=_admin_menu_markup(),
+        get_message("admin_panel_header", lang),
+        reply_markup=_admin_menu_markup(lang),
         parse_mode="Markdown")
 
 
@@ -1373,7 +1374,7 @@ async def cmd_bot_infoedit(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     lang = get_user_language(user.id)
     _clear_wizard(ctx)
-    await _reply(update, get_message("bot_infoedit", lang), reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
+    await _reply(update, get_message("bot_infoedit", lang), reply_markup=_bot_infoedit_markup(lang), parse_mode="Markdown")
 
 
 @admin_only
@@ -1978,11 +1979,13 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             break
 
     if data == "a:menu":
+        user = query.from_user
+        lang = get_user_language(user.id)
         _clear_wizard(ctx)
         # Use stored dept_id from context or extracted from callback
         if not dept_id and "admin_dept_id" in ctx.user_data:
             dept_id = ctx.user_data["admin_dept_id"]
-        await _edit_message_text(query, "🛠 *Адмін-панель*", reply_markup=_admin_menu_markup(dept_id), parse_mode="Markdown")
+        await _edit_message_text(query, get_message("admin_panel_header", lang), reply_markup=_admin_menu_markup(lang, dept_id), parse_mode="Markdown")
         return
 
     if data.startswith("a:add:"):
@@ -2305,10 +2308,12 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         return
 
     if data == "be:menu":
+        user = query.from_user
+        lang = get_user_language(user.id)
         _clear_wizard(ctx)
         await _edit_message_text(query, 
-            text="🧩 *Редактор інформації бота*",
-            reply_markup=_bot_infoedit_markup(),
+            text=get_message("bot_infoedit", lang),
+            reply_markup=_bot_infoedit_markup(lang),
             parse_mode="Markdown",
         )
         return
@@ -2323,6 +2328,8 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         return
 
     if data == "be:preview":
+        user = query.from_user
+        lang = get_user_language(user.id)
         welcome_preview = _get_text_setting("welcome_text", first_name="Ім'я")
         help_preview = _get_text_setting("help_text")
         text = (
@@ -2332,21 +2339,14 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             "*/help:*\n"
             f"{help_preview}"
         )
-        await _edit_message_text(query, text=text, reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
+        await _edit_message_text(query, text=text, reply_markup=_bot_infoedit_markup(lang), parse_mode="Markdown")
         return
 
     if data == "be:limits":
-        text = (
-            "*Через це меню можна змінити:*\n"
-            "• текст /start\n"
-            "• текст /help\n\n"
-            "*Тільки через @BotFather:*\n"
-            "• фото бота\n"
-            "• username та ім'я бота\n"
-            "• about/description у профілі бота\n"
-            "• токен бота"
-        )
-        await _edit_message_text(query, text=text, reply_markup=_bot_infoedit_markup(), parse_mode="Markdown")
+        user = query.from_user
+        lang = get_user_language(user.id)
+        text = get_message("admin_botfather_limits", lang)
+        await _edit_message_text(query, text=text, reply_markup=_bot_infoedit_markup(lang), parse_mode="Markdown")
         return
 
 

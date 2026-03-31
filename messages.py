@@ -674,10 +674,139 @@ MESSAGES = {
         "uk": "🛠 *Адмін-панель*",
     },
     
-    "shop_placeholder": {
-        "en": "🛒 *Shop*\n\nCheck back soon for rewards!",
-        "ro": "🛒 *Magazin*\n\nVerifică din nou în curând pentru recompense!",
-        "uk": "🛒 *Магазин*\n\nПовернись скоро для нагород!",
+    "admin_add_task_btn": {
+        "en": "➕ Add Task",
+        "ro": "➕ Adaugă Sarcină",
+        "uk": "➕ Додати завдання",
+    },
+    
+    "admin_delete_task_btn": {
+        "en": "🗑 Delete Task",
+        "ro": "🗑 Șterge Sarcină",
+        "uk": "🗑 Видалити завдання",
+    },
+    
+    "admin_users_btn": {
+        "en": "👥 Users",
+        "ro": "👥 Utilizatori",
+        "uk": "👥 Користувачі",
+    },
+    
+    "admin_ideas_btn": {
+        "en": "💡 Ideas",
+        "ro": "💡 Idei",
+        "uk": "💡 Ідеї",
+    },
+    
+    "admin_xp_btn": {
+        "en": "🎁 Award XP",
+        "ro": "🎁 Acordă XP",
+        "uk": "🎁 Нарахувати XP",
+    },
+    
+    "admin_stats_btn": {
+        "en": "📊 Statistics",
+        "ro": "📊 Statistici",
+        "uk": "📊 Статистика",
+    },
+    
+    "admin_shop_btn": {
+        "en": "🛒 Shop Items",
+        "ro": "🛒 Articole Magazin",
+        "uk": "🛒 Товари магазину",
+    },
+    
+    "admin_edit_info_btn": {
+        "en": "🧩 Edit Bot Info",
+        "ro": "🧩 Editează Info Bot",
+        "uk": "🧩 Редагувати інфо бота",
+    },
+    
+    "admin_back_menu": {
+        "en": "⬅ Back to Menu",
+        "ro": "⬅ Înapoi la Meniu",
+        "uk": "⬅ В адмін-메뉴",
+    },
+    
+    "admin_back": {
+        "en": "⬅ Back",
+        "ro": "⬅ Înapoi",
+        "uk": "⬅ Назад",
+    },
+    
+    "admin_all_users_btn": {
+        "en": "📊 All Users",
+        "ro": "📊 Toți Utilizatorii",
+        "uk": "📊 Всі користувачі",
+    },
+    
+    "admin_edit_text_btn": {
+        "en": "✍️ Edit welcome /start",
+        "ro": "✍️ Editează salut /start",
+        "uk": "✍️ Змінити привітання /start",
+    },
+    
+    "admin_edit_help_btn": {
+        "en": "✍️ Edit help /help",
+        "ro": "✍️ Editează ajutor /help",
+        "uk": "✍️ Змінити довідку /help",
+    },
+    
+    "admin_preview_btn": {
+        "en": "👁️ Preview texts",
+        "ro": "👁️ Previzualizează textele",
+        "uk": "👁️ Переглянути тексти",
+    },
+    
+    "admin_botfather_info": {
+        "en": "ℹ️ What changes only via BotFather",
+        "ro": "ℹ️ Ce se schimbă doar via BotFather",
+        "uk": "ℹ️ Що змінюється тільки через BotFather",
+    },
+    
+    "admin_edit_product_btn": {
+        "en": "✏️ Edit",
+        "ro": "✏️ Editează",
+        "uk": "✏️ Ред.",
+    },
+    
+    "admin_anon_user": {
+        "en": "🕵️ Anonymous",
+        "ro": "🕵️ Anonim",
+        "uk": "🕵️ Анонім",
+    },
+    
+    "admin_botfather_limits": {
+        "en": (
+            "*You can change via this menu:*\n"
+            "• /start text\n"
+            "• /help text\n\n"
+            "*Only via @BotFather:*\n"
+            "• bot photo\n"
+            "• bot username and name\n"
+            "• bot profile description\n"
+            "• bot token"
+        ),
+        "ro": (
+            "*Puteți schimba prin acest meniu:*\n"
+            "• text /start\n"
+            "• text /help\n\n"
+            "*Doar prin @BotFather:*\n"
+            "• fotografie bot\n"
+            "• username și nume bot\n"
+            "• descriere profil bot\n"
+            "• token bot"
+        ),
+        "uk": (
+            "*Через це меню можна змінити:*\n"
+            "• текст /start\n"
+            "• текст /help\n\n"
+            "*Тільки через @BotFather:*\n"
+            "• фото бота\n"
+            "• username та ім'я бота\n"
+            "• about/description у профілі бота\n"
+            "• токен бота"
+        ),
     },
     
     "inventory_placeholder": {

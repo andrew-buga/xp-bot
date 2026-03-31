@@ -177,9 +177,15 @@ MESSAGES = {
     },
     
     "task_submit_prompt": {
-        "en": "📤 *Submitting: {title}*\n\nSend proof of completion:\n• 📸 Screenshot\n• 📝 Or text description\n\n_To cancel — /cancel_",
-        "ro": "📤 *Trimitere: {title}*\n\nTrimite dovada finalizării:\n• 📸 Captură de ecran\n• 📝 Sau descriere text\n\n_Pentru a anula — /cancel_",
-        "uk": "📤 *Здача: {title}*\n\nНадішли підтвердження виконання:\n• 📸 Скріншот\n• 📝 Або текстовий опис\n\n_Щоб скасувати — /cancel_",
+        "en": "📤 *Submitting: {title}*\n\nSend proof of completion:\n• 📸 Screenshot\n• 📝 Or text description",
+        "ro": "📤 *Trimitere: {title}*\n\nTrimite dovada finalizării:\n• 📸 Captură de ecran\n• 📝 Sau descriere text",
+        "uk": "📤 *Здача: {title}*\n\nНадішли підтвердження виконання:\n• 📸 Скріншот\n• 📝 Або текстовий опис",
+    },
+    
+    "cancel_btn": {
+        "en": "❌ Cancel",
+        "ro": "❌ Anulare",
+        "uk": "❌ Скасувати",
     },
     
     "task_already_done": {
@@ -439,6 +445,12 @@ MESSAGES = {
         "en": "🧩 *Bot Information Editor*",
         "ro": "🧩 *Editor Informații Bot*",
         "uk": "🧩 *Редактор інформації бота*",
+    },
+    
+    "back_btn": {
+        "en": "⬅ Back",
+        "ro": "⬅ Înapoi",
+        "uk": "⬅ Назад",
     },
 }
 

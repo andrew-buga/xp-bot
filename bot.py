@@ -645,8 +645,13 @@ async def cmd_shop(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     register_user(user)
     lang = get_user_language(user.id)
     
+    markup = InlineKeyboardMarkup([
+        [_btn(get_message("back_btn", lang), callback_data="menu_back")]
+    ])
+    
     await _reply(update,
         get_message("shop_placeholder", lang),
+        reply_markup=markup,
         parse_mode="Markdown")
 
 
@@ -657,8 +662,13 @@ async def cmd_inventory(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     register_user(user)
     lang = get_user_language(user.id)
     
+    markup = InlineKeyboardMarkup([
+        [_btn(get_message("back_btn", lang), callback_data="menu_back")]
+    ])
+    
     await _reply(update,
         get_message("inventory_placeholder", lang),
+        reply_markup=markup,
         parse_mode="Markdown")
 
 
@@ -669,12 +679,16 @@ async def cmd_achievements(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     register_user(user)
     lang = get_user_language(user.id)
     
+    markup = InlineKeyboardMarkup([
+        [_btn(get_message("back_btn", lang), callback_data="menu_back")]
+    ])
+    
     await _reply(update,
         get_message("achievements_placeholder", lang),
+        reply_markup=markup,
         parse_mode="Markdown")
 
 
-@rate_limit_user
 @rate_limit_user
 async def cmd_idea(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Start idea submission flow"""
@@ -684,8 +698,13 @@ async def cmd_idea(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     ctx.user_data["submitting_idea"] = True
     
+    markup = InlineKeyboardMarkup([
+        [_btn(get_message("back_btn", lang), callback_data="idea_cancel")]
+    ])
+    
     await _reply(update,
         get_message("idea_prompt", lang),
+        reply_markup=markup,
         parse_mode="Markdown")
 
 
@@ -718,7 +737,8 @@ async def handle_idea_submission(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         [
             _btn(get_message("idea_btn_named", lang), callback_data="idea_named"),
             _btn(get_message("idea_btn_anon", lang), callback_data="idea_anon"),
-        ]
+        ],
+        [_btn(get_message("back_btn", lang), callback_data="idea_back")],
     ])
     
     await _reply(update,
@@ -989,7 +1009,14 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @rate_limit_user
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await _reply(update, _get_text_setting("help_text"), parse_mode="Markdown")
+    user = update.effective_user
+    lang = get_user_language(user.id)
+    
+    markup = InlineKeyboardMarkup([
+        [_btn(get_message("back_btn", lang), callback_data="menu_back")]
+    ])
+    
+    await _reply(update, _get_text_setting("help_text"), reply_markup=markup, parse_mode="Markdown")
 
 
 @rate_limit_user
@@ -1029,7 +1056,11 @@ async def cmd_about(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ),
     }.get(lang, "🤖 XP Bot — Community motivation system")
     
-    await _reply(update, about_text, parse_mode="Markdown")
+    markup = InlineKeyboardMarkup([
+        [_btn(get_message("back_btn", lang), callback_data="menu_back")]
+    ])
+    
+    await _reply(update, about_text, reply_markup=markup, parse_mode="Markdown")
 
 
 @rate_limit_user
@@ -1178,6 +1209,7 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [_btn(get_message("tasks_easy_btn", lang), callback_data="tasks_easy")],
         [_btn(get_message("tasks_medium_btn", lang), callback_data="tasks_medium")],
         [_btn(get_message("tasks_hard_btn", lang), callback_data="tasks_hard")],
+        [_btn(get_message("back_btn", lang), callback_data="menu_back")],
     ])
     
     await _reply(update,
@@ -2360,6 +2392,35 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data == "menu_back":
         await cmd_menu(update, ctx)
         return
+    
+    # Back buttons from various menus
+    if data == "idea_cancel":
+        ctx.user_data.pop("submitting_idea", None)
+        ctx.user_data.pop("idea_draft", None)
+        await cmd_menu(update, ctx)
+        return
+    
+    if data == "idea_back":
+        # Go back to idea text input step
+        user = query.from_user
+        lang = get_user_language(user.id)
+        ctx.user_data.pop("idea_draft", None)
+        ctx.user_data["submitting_idea"] = True
+        
+        markup = InlineKeyboardMarkup([
+            [_btn(get_message("back_btn", lang), callback_data="idea_cancel")]
+        ])
+        
+        await _edit_message_text(query,
+            get_message("idea_prompt", lang),
+            reply_markup=markup,
+            parse_mode="Markdown")
+        return
+    
+    if data == "submit_cancel":
+        ctx.user_data.pop("submitting_task_id", None)
+        await cmd_menu(update, ctx)
+        return
 
     # Handle change departments button (legacy, from menu)
     if data == "change_depts":
@@ -2417,15 +2478,15 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         task = get_task(task_id)
         ctx.user_data["submitting_task_id"] = task_id
+        
+        lang = get_user_language(user.id)
+        markup = InlineKeyboardMarkup([
+            [_btn(get_message("cancel_btn", lang), callback_data="submit_cancel")]
+        ])
 
         await query.message.reply_text(
-            (
-                f"📤 *Здача: {task['title']}*\n\n"
-                "Надішли підтвердження виконання:\n"
-                "• 📸 Скріншот\n"
-                "• 📝 Або текстовий опис\n\n"
-                "_Щоб скасувати — /cancel_"
-            ),
+            get_message("task_submit_prompt", lang, title=task['title']),
+            reply_markup=markup,
             parse_mode="Markdown",
         )
         return

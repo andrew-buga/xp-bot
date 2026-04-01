@@ -1102,6 +1102,8 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user)
     
+    push_nav(ctx, "info")
+    
     db_user = get_user(user.id)
     lang = get_user_language(user.id)
     depts = get_user_departments(user.id) or []
@@ -1133,7 +1135,9 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"{get_message('info_departments', lang)}\n{dept_str}"
     )
     
-    await _reply(update, text, parse_mode="Markdown")
+    markup = InlineKeyboardMarkup([[_btn(get_message("back_btn", lang), callback_data="go_back")]])
+    
+    await _reply(update, text, reply_markup=markup, parse_mode="Markdown")
 
 
 @rate_limit_user

@@ -618,7 +618,31 @@ MESSAGES = {
             "🏆 Топ учасників: /leaderboard"
         ),
     },
-    
+
+    "support_btn": {
+        "en": "📧 Write to developer",
+        "ro": "📧 Scrie dezvoltatorului",
+        "uk": "📧 Написати розробнику",
+    },
+
+    "support_prompt": {
+        "en": "✉️ *Write your message to the developer*\n\nDescribe your issue, suggestion, or question.\nReply to this message with your text.",
+        "ro": "✉️ *Scrie mesajul tău dezvoltatorului*\n\nDescrie problema, sugestia sau întrebarea ta.\nRăspunde la acest mesaj cu textul tău.",
+        "uk": "✉️ *Напиши своє повідомлення розробнику*\n\nОпиши свою проблему, пропозицію або запитання.\nВідповідь цьому повідомленню зі своїм текстом.",
+    },
+
+    "support_sent": {
+        "en": "✅ *Message sent!*\n\nDeveloper will review your message soon.",
+        "ro": "✅ *Mesaj trimis!*\n\nDezvoltatorul va revizui mesajul tău în curând.",
+        "uk": "✅ *Повідомлення відправлено!*\n\nРозробник скоро розглянути твоє повідомлення.",
+    },
+
+    "support_notification": {
+        "en": "📨 *New message from user*\n\n👤 User: {user_name} (ID: {user_id})\n🏢 Department: {department}\n\n💬 Message:\n{message}",
+        "ro": "📨 *Mesaj nou de la utilizator*\n\n👤 Utilizator: {user_name} (ID: {user_id})\n🏢 Departament: {department}\n\n💬 Mesaj:\n{message}",
+        "uk": "📨 *Нове повідомлення від користувача*\n\n👤 Користувач: {user_name} (ID: {user_id})\n🏢 Департамент: {department}\n\n💬 Повідомлення:\n{message}",
+    },
+
     "about_header": {
         "en": "🤖 *About XP Bot*",
         "ro": "🤖 *Despre XP Bot*",

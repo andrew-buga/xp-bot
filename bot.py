@@ -1068,11 +1068,15 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @rate_limit_user
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Show help/documentation."""
     user = update.effective_user
-    lang = get_user_language(user.id)
+    register_user(user)
     
+    lang = get_user_language(user.id)
     push_nav(ctx, "menu")
+    
     markup = InlineKeyboardMarkup([
+        [_btn(get_message("support_btn", lang), callback_data="support_write")],
         [_btn(get_message("back_btn", lang), callback_data="go_back")]
     ])
     
@@ -2363,6 +2367,19 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data == "noop":
         return
 
+    # Handle support message writing
+    if data == "support_write":
+        user = query.from_user
+        lang = get_user_language(user.id)
+        
+        # Set flag to catch next message as support message
+        ctx.user_data["waiting_for_support"] = True
+        ctx.user_data["support_lang"] = lang
+        
+        text = get_message("support_prompt", lang)
+        await _query_reply(query, text)
+        return
+
     # Handle leaderboard selection
     if data.startswith("lb:"):
         user_id = query.from_user.id
@@ -2689,6 +2706,57 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Check if user is submitting an idea
     if ctx.user_data.get("submitting_idea"):
         await handle_idea_submission(update, ctx)
+        return
+    
+    # Check if user is writing support message
+    if ctx.user_data.get("waiting_for_support"):
+        message_text = (update.message.text or "").strip()
+        if not message_text:
+            lang = ctx.user_data.get("support_lang", "en")
+            await _reply(update, "❌ Повідомлення не може бути порожнім. Спробуй ще раз:")
+            return
+        
+        lang = ctx.user_data.get("support_lang", "en")
+        
+        # Get user department info
+        dept_name = "Unknown"
+        try:
+            dept_id = get_user_departments(user.id)
+            if dept_id and len(dept_id) > 0:
+                dept = get_department(dept_id[0])
+                if dept:
+                    dept_name = dept.get("name", "Unknown")
+        except:
+            pass
+        
+        # Format and send notification to admins
+        notification = get_message("support_notification", "en").format(
+            user_name=user.first_name or "User",
+            user_id=user.id,
+            department=dept_name,
+            message=message_text
+        )
+        
+        success_count = 0
+        for admin_id in ADMIN_IDS:
+            try:
+                await ctx.bot.send_message(admin_id, notification, parse_mode="Markdown")
+                success_count += 1
+            except Exception as e:
+                logger.error(f"Failed to send support message to admin {admin_id}: {e}")
+        
+        # Confirm to user
+        if success_count > 0:
+            confirm_text = get_message("support_sent", lang)
+            if not confirm_text:
+                confirm_text = "✅ Ваше повідомлення надіслано розробнику. Дякуємо!"
+        else:
+            confirm_text = "❌ Помилка при відправці. Спробуй пізніше."
+        
+        await _reply(update, confirm_text)
+        
+        # Clear flag
+        ctx.user_data["waiting_for_support"] = False
         return
     
     # Handle admin wizards

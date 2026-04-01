@@ -91,6 +91,42 @@ MESSAGES = {
         "uk": "🏢 Змінити департаменти",
     },
 
+    "dept_manage_btn": {
+        "en": "🏢 Manage Departments",
+        "ro": "🏢 Gestionează Departamentele",
+        "uk": "🏢 Керувати департаментами",
+    },
+
+    "dept_manage_prompt": {
+        "en": "🏢 *Your departments:*\n\nClick ❌ to leave, or ➕ to add more.",
+        "ro": "🏢 *Departamentele tale:*\n\nFă clic pe ❌ pentru a ieși, sau ➕ pentru a adăuga.",
+        "uk": "🏢 *Твої департаменти:*\n\nНатисни ❌ щоб покинути, або ➕ за додаванням.",
+    },
+
+    "dept_leave_btn": {
+        "en": "❌ Leave",
+        "ro": "❌ Ieși",
+        "uk": "❌ Вийти",
+    },
+
+    "dept_add_more_prompt": {
+        "en": "🏢 *Add more departments:*\n\nSelect departments to add",
+        "ro": "🏢 *Adaugă mai multe departamente:*\n\nSelectează departamentele",
+        "uk": "🏢 *Додати ще департаменти:*\n\nОбери департаменти",
+    },
+
+    "dept_add_more_btn": {
+        "en": "➕ Add More",
+        "ro": "➕ Adaugă Mai Mult",
+        "uk": "➕ Додати Ще",
+    },
+
+    "dept_updated": {
+        "en": "✅ *Departments updated!*\n\n🏢 Your departments:\n{depts}",
+        "ro": "✅ *Departamente actualizate!*\n\n🏢 Departamentele tale:\n{depts}",
+        "uk": "✅ *Департаменти оновлені!*\n\n🏢 Твої департаменти:\n{depts}",
+    },
+
     "menu_prompt": {
         "en": "📋 *Main Menu*\n\n✨ /tasks — view tasks\n⭐ /info — your profile\n🏆 /leaderboard — leaderboard\n⚙️ /settings — change department & language\n❓ /help — help & commands\nℹ️ /about — about the bot\n🎯 /idea — share an idea",
         "ro": "📋 *Meniu Principal*\n\n✨ /tasks — vizualizare sarcini\n⭐ /info — profilul tău\n🏆 /leaderboard — clasament\n⚙️ /settings — schimbă departamentul și limbă\n❓ /help — ajutor și comenzi\nℹ️ /about — despre bot\n🎯 /idea — partajează o idee",

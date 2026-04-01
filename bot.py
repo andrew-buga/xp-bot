@@ -545,6 +545,71 @@ async def handle_verify_retry(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await process_subscription_verification(update, ctx)
 
 
+def _render_manage_depts(user_id: int, lang: str) -> tuple[str, InlineKeyboardMarkup]:
+    """Render department management UI."""
+    user_depts = get_user_departments(user_id) or []
+    if not user_depts:
+        return ("No departments", InlineKeyboardMarkup([[_btn(get_message("back_btn", lang), callback_data="go_back")]]))
+    depts = get_departments()
+    rows = []
+    for d in depts:
+        if d['id'] in user_depts:
+            rows.append([_btn(f"{d['emoji']} {d['name']}", callback_data="noop"), _btn("❌", callback_data=f"dept_leave_{d['id']}")])
+    avail = [d for d in depts if d['id'] not in user_depts]
+    if avail:
+        rows.append([_btn(get_message("dept_add_more_btn", lang), callback_data="dept_add_mode")])
+    rows.append([_btn(get_message("back_btn", lang), callback_data="go_back")])
+    return get_message("dept_manage_prompt", lang), InlineKeyboardMarkup(rows)
+
+
+async def handle_manage_depts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle manage depts button."""
+    query = update.callback_query
+    await _query_answer(query)
+    uid = query.from_user.id
+    lang = get_user_language(uid)
+    text, mk = _render_manage_depts(uid, lang)
+    await _edit_message_text(query, text, reply_markup=mk, parse_mode="Markdown")
+
+
+async def handle_leave_dept(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle leaving a department."""
+    query = update.callback_query
+    await _query_answer(query)
+    uid = query.from_user.id
+    lang = get_user_language(uid)
+    try:
+        did = int(query.data.split("_")[2])
+    except (IndexError, ValueError):
+        await _query_answer(query, "Error parsing department", show_alert=True)
+        return
+    udpts = get_user_departments(uid) or []
+    if len(udpts) <= 1:
+        await _query_answer(query, "❌ Keep at least 1 dept!", show_alert=True)
+        return
+    remove_user_department(uid, did)
+    text, mk = _render_manage_depts(uid, lang)
+    await _edit_message_text(query, text, reply_markup=mk, parse_mode="Markdown")
+
+
+async def handle_add_more_depts(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle adding more departments."""
+    query = update.callback_query
+    await _query_answer(query)
+    uid = query.from_user.id
+    lang = get_user_language(uid)
+    ctx.user_data["add_mode"] = True
+    ctx.user_data["selected_depts"] = get_user_departments(uid) or []
+    dpts = get_departments()
+    rows = []
+    for d in dpts:
+        if d['id'] not in ctx.user_data["selected_depts"]:
+            rows.append([_btn(f"☐ {d['emoji']} {d['name']}", callback_data=f"dept_toggle_{d['id']}")])
+    rows.append([_btn(get_message("dept_btn_done", lang), callback_data="dept_add_done")])
+    rows.append([_btn(get_message("back_btn", lang), callback_data="manage_depts")])
+    await _edit_message_text(query, get_message("dept_add_more_prompt", lang), reply_markup=InlineKeyboardMarkup(rows), parse_mode="Markdown")
+
+
 async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle multi-select department selection."""
     query = update.callback_query
@@ -595,7 +660,7 @@ async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_
         return
     
     # Handle Done button
-    if data == "dept_done":
+    if data == "dept_done" or data == "dept_add_done":
         if not selected:
             await _query_answer(query, "⚠️ Виберай хоча б один департамент!", show_alert=True)
             return
@@ -3064,6 +3129,9 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_change_language, pattern="^change_lang$"))
     app.add_handler(CallbackQueryHandler(handle_verify_retry, pattern="^verify_retry$"))
     app.add_handler(CallbackQueryHandler(handle_department_selection, pattern="^dept_"))
+    app.add_handler(CallbackQueryHandler(handle_manage_depts, pattern="^manage_depts$"))
+    app.add_handler(CallbackQueryHandler(handle_leave_dept, pattern="^dept_leave_"))
+    app.add_handler(CallbackQueryHandler(handle_add_more_depts, pattern="^dept_add_mode$"))
     app.add_handler(CallbackQueryHandler(handle_tasks_category, pattern="^tasks_"))
     app.add_handler(CallbackQueryHandler(handle_idea_anonymity_choice, pattern="^idea_(named|anon)$"))
     

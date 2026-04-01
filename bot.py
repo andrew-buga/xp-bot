@@ -1111,7 +1111,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     logger.info(f"🔍 Перевіряю поточний статус підписки для {user.id}...")
     is_subscribed = await check_channel_subscription(ctx.bot, user.id, TELEGRAM_CHANNEL_ID)
     db_user = get_user(user.id)
-    is_verified_in_db = db_user.get('is_verified', 0) if db_user else 0
+    is_verified_in_db = db_user['is_verified'] if db_user else 0
     
     # Sync verification status with actual subscription
     if is_subscribed and not is_verified_in_db:
@@ -1190,7 +1190,7 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # 🔄 Update verification status before showing profile
     is_subscribed = await check_channel_subscription(ctx.bot, user.id, TELEGRAM_CHANNEL_ID)
     db_user = get_user(user.id)
-    is_verified_in_db = db_user.get('is_verified', 0) if db_user else 0
+    is_verified_in_db = db_user['is_verified'] if db_user else 0
     
     if is_subscribed and not is_verified_in_db:
         mark_verified(user.id)
@@ -3110,10 +3110,6 @@ def main():
     
     app = Application.builder().token(BOT_TOKEN).build()
     
-    # Add background job for weekly verification check
-    job_queue = app.job_queue
-    job_queue.run_repeating(verify_subscriptions_background_job, interval=3600*24*7, first=10)
-    
     # Product commands
     app.add_handler(CommandHandler("addproduct", cmd_addproduct))
     app.add_handler(CommandHandler("delproduct", cmd_delproduct))
@@ -3169,6 +3165,14 @@ def main():
     # Text and media handlers
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_input))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, handle_proof_media))
+
+    # Add background job for weekly verification check
+    job_queue = app.job_queue
+    if job_queue:
+        job_queue.run_repeating(verify_subscriptions_background_job, interval=3600*24*7, first=10)
+        logger.info("✅ Background verification job scheduled")
+    else:
+        logger.warning("⚠️ Could not setup background job")
 
     logger.info("🤖 Бот запущено!")
     app.run_polling()

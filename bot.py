@@ -3085,6 +3085,25 @@ async def verify_subscriptions_background_job(context: ContextTypes.DEFAULT_TYPE
     logger.info("✅ Weekly subscription check completed!")
 
 
+async def handle_error(update: object, context: ContextTypes.DEFAULT_TYPE):
+    """Handle all errors in command handlers"""
+    logger.error(f"❌ ERROR: {context.error}")
+    logger.error(f"Update: {update}")
+    import traceback
+    logger.error(traceback.format_exc())
+    
+    # Notify user if possible
+    if update and hasattr(update, "message") and update.message:
+        try:
+            await update.message.reply_text(
+                "❌ *Помилка!*\n\n"
+                "Щось пішло не так. Спробуй ще раз або напиши /help для довідки.",
+                parse_mode="Markdown"
+            )
+        except Exception as e:
+            logger.error(f"Could not send error message to user: {e}")
+
+
 def main():
     import sys
     import asyncio
@@ -3109,6 +3128,9 @@ def main():
     log_bot_startup(users_count, depts_count, 0, 0)
     
     app = Application.builder().token(BOT_TOKEN).build()
+    
+    # Add error handler to catch all errors
+    app.add_error_handler(handle_error)
     
     # Product commands
     app.add_handler(CommandHandler("addproduct", cmd_addproduct))

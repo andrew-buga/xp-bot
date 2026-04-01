@@ -1124,7 +1124,7 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Format department list
     dept_str = "\n".join([f"  • {name}" for name in dept_names]) if dept_names else get_message("info_none_selected", lang)
     
-    verified_status = get_message("info_verified_yes", lang) if db_user.get('is_verified') else get_message("info_verified_no", lang)
+    verified_status = get_message("info_verified_yes", lang) if db_user['is_verified'] else get_message("info_verified_no", lang)
     
     text = (
         f"{get_message('info_header', lang)}\n\n"
@@ -2996,6 +2996,19 @@ async def verify_subscriptions_background_job(context: ContextTypes.DEFAULT_TYPE
 
 
 def main():
+    import sys
+    import asyncio
+    
+    # Fix for Python 3.10+ on Windows - create event loop explicitly
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        if sys.platform == 'win32':
+            loop = asyncio.ProactorEventLoop()
+        else:
+            loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
     init_db()
     
     # 📊 Log bot startup

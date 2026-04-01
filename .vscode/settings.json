@@ -1,5 +1,5 @@
 {
-  "cSpell.ignoreWords": [],
+  "cSpell.ignoreWords": ["cspellrc"],
   "cSpell.ignorePaths": [
     "**/messages.py",
     "**/.cspellrc.json"

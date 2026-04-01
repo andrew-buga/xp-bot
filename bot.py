@@ -1107,6 +1107,20 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     logger.info(f"👤 /start від {user.id}: depts={depts}, lang={lang}")
     
+    # 🔄 ALWAYS check current subscription status (even for fully registered users)
+    logger.info(f"🔍 Перевіряю поточний статус підписки для {user.id}...")
+    is_subscribed = await check_channel_subscription(ctx.bot, user.id, TELEGRAM_CHANNEL_ID)
+    db_user = get_user(user.id)
+    is_verified_in_db = db_user.get('is_verified', 0) if db_user else 0
+    
+    # Sync verification status with actual subscription
+    if is_subscribed and not is_verified_in_db:
+        logger.info(f"✅ Користувач {user.id} підписаний, але позначений як невверифікований - виправляю")
+        mark_verified(user.id)
+    elif not is_subscribed and is_verified_in_db:
+        logger.info(f"❌ Користувач {user.id} не підписаний, але позначений як верифікований - виправляю")
+        mark_unverified(user.id)
+    
     # 1️⃣ User is fully registered - remind them to use /menu
     if depts:
         msg = "uk" if lang == "uk" else "ro" if lang == "ro" else "en"
@@ -1173,6 +1187,17 @@ async def cmd_info(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     push_nav(ctx, "info")
     
+    # 🔄 Update verification status before showing profile
+    is_subscribed = await check_channel_subscription(ctx.bot, user.id, TELEGRAM_CHANNEL_ID)
+    db_user = get_user(user.id)
+    is_verified_in_db = db_user.get('is_verified', 0) if db_user else 0
+    
+    if is_subscribed and not is_verified_in_db:
+        mark_verified(user.id)
+    elif not is_subscribed and is_verified_in_db:
+        mark_unverified(user.id)
+    
+    # Get fresh data after potential verification update
     db_user = get_user(user.id)
     lang = get_user_language(user.id)
     depts = get_user_departments(user.id) or []

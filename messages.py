@@ -594,12 +594,6 @@ MESSAGES = {
     },
     
     # ========== LEADERBOARD ==========
-    "leaderboard_header": {
-        "en": "🏆 *Leaderboard*",
-        "ro": "🏆 *Clasament*",
-        "uk": "🏆 *Таблиця лідерів*",
-    },
-    
     "leaderboard_prompt": {
         "en": "Select whose leaderboard to view:",
         "ro": "Selectează al cui clasament să vezi:",
@@ -867,91 +861,6 @@ MESSAGES = {
             "• about/description у профілі бота\n"
             "• токен бота"
         ),
-    },
-    
-    "inventory_placeholder": {
-        "en": "📦 *Inventory*\n\nYour purchased items will appear here.",
-        "ro": "📦 *Inventar*\n\nElementele achiziționate vor apărea aici.",
-        "uk": "📦 *Інвентар*\n\nТвої придбані предмети з'являтися тут.",
-    },
-    
-    "achievements_placeholder": {
-        "en": "🏅 *Achievements*\n\nUnlock achievements by completing tasks!",
-        "ro": "🏅 *Realizări*\n\nDeblochează realizări finalizând sarcini!",
-        "uk": "🏅 *Досягнення*\n\nРозблокуй досягнення виконуючи завдання!",
-    },
-    
-    # ========== ERROR & CONFIRMATION ==========
-    "admin_only": {
-        "en": "❌ Admin only",
-        "ro": "❌ Doar pentru admini",
-        "uk": "❌ Тільки для адмінів",
-    },
-    
-    "dept_required": {
-        "en": "⚠️ First select your department. Click /start",
-        "ro": "⚠️ Mai întâi selectează-ți departamentul. Click /start",
-        "uk": "⚠️ Спочатку обери департамент. Напиши /start",
-    },
-    
-    "banned": {
-        "en": "🚫 You are banned from using this bot.",
-        "ro": "🚫 Ești interzis să folosești acest bot.",
-        "uk": "🚫 Ти заблокований у цьому боті.",
-    },
-    
-    "cancel_success": {
-        "en": "✅ Cancelled. Back to menu.",
-        "ro": "✅ Anulat. Înapoi la meniu.",
-        "uk": "✅ Скасовано. Назад до меню.",
-    },
-    
-    "cancel_no_action": {
-        "en": "ℹ️ Nothing to cancel.",
-        "ro": "ℹ️ Nimic de anulat.",
-        "uk": "ℹ️ Нічого скасовувати.",
-    },
-    
-    "no_proof": {
-        "en": "❌ Send text or an image.",
-        "ro": "❌ Trimite text sau o imagine.",
-        "uk": "❌ Надішли текст або зображення.",
-    },
-    
-    "task_not_found": {
-        "en": "❌ Task not found.",
-        "ro": "❌ Sarcina nu a fost găsită.",
-        "uk": "❌ Завдання не знайдено.",
-    },
-    
-    "user_not_found": {
-        "en": "❌ User not found.",
-        "ro": "❌ Utilizatorul nu a fost găsit.",
-        "uk": "❌ Користувач не знайден.",
-    },
-    
-    "format_addproduct": {
-        "en": "❌ Format: /addproduct <name> <xp>\nExample: /addproduct Laptop 500",
-        "ro": "❌ Format: /addproduct <nume> <xp>\nExemplu: /addproduct Laptop 500",
-        "uk": "❌ Формат: /addproduct <ім'я> <xp>\nПриклад: /addproduct Ноутбук 500",
-    },
-    
-    "format_deltask": {
-        "en": "❌ Format: /deltask <task_id>",
-        "ro": "❌ Format: /deltask <task_id>",
-        "uk": "❌ Формат: /deltask <task_id>",
-    },
-    
-    "format_editproduct": {
-        "en": "❌ Format: /editproduct <id> <name> <xp>",
-        "ro": "❌ Format: /editproduct <id> <nume> <xp>",
-        "uk": "❌ Формат: /editproduct <id> <ім'я> <xp>",
-    },
-    
-    "format_givexp": {
-        "en": "❌ Format: /givexp <user_id> <amount>",
-        "ro": "❌ Format: /givexp <user_id> <suma>",
-        "uk": "❌ Формат: /givexp <user_id> <кількість>",
     },
     
     "back_btn": {

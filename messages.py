@@ -595,9 +595,9 @@ MESSAGES = {
     
     # ========== LEADERBOARD ==========
     "leaderboard_prompt": {
-        "en": "Select whose leaderboard to view:",
-        "ro": "Selectează al cui clasament să vezi:",
-        "uk": "Виберіть чию таблицю хочете переглянути:",
+        "en": "Select which \"table\" you want to view:",
+        "ro": "Selectează care \"tabel\" vrei să vezi:",
+        "uk": "Виберіть \"яку\" таблицю хочете переглянути:",
     },
     
     "leaderboard_global_btn": {

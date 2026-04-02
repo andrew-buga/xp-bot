@@ -1,6 +1,7 @@
 ﻿import logging
 import sqlite3
 import time
+import asyncio
 from collections import defaultdict, deque
 from functools import wraps
 from datetime import datetime, timedelta
@@ -391,10 +392,16 @@ def requires_dept_and_verified(func):
 async def check_channel_subscription(bot, user_id: int, channel_id: int) -> bool:
     """Check if user is subscribed to channel. Returns True if subscribed."""
     try:
-        member = await bot.get_chat_member(channel_id, user_id)
-        is_subscribed = member.status in ["member", "administrator", "creator"]
-        logger.info(f"🔍 Статус користувача {user_id} в каналі {channel_id}: {member.status} → підписаний={is_subscribed}")
-        return is_subscribed
+        # Add 5-second timeout to prevent API calls from hanging
+        async with asyncio.timeout(5):
+            member = await bot.get_chat_member(channel_id, user_id)
+            is_subscribed = member.status in ["member", "administrator", "creator"]
+            logger.info(f"🔍 Статус користувача {user_id} в каналі {channel_id}: {member.status} → підписаний={is_subscribed}")
+            return is_subscribed
+    except asyncio.TimeoutError:
+        logger.warning(f"⏱️ Timeout перевірки підписки для {user_id} на канал {channel_id}")
+        # Assume subscription is OK if API times out (fail-open, assume verified)
+        return True
     except Exception as e:
         logger.warning(f"❌ Помилка перевірки підписки для {user_id}: {e}")
         return False

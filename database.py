@@ -6,7 +6,7 @@ DB_PATH = "bot_data.db"
 
 
 def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5.0)  # 5 second timeout to prevent hangs
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -14,7 +14,11 @@ def get_conn():
 def init_db():
     conn = get_conn()
     c = conn.cursor()
-
+    
+    # Enable WAL mode for better concurrent access
+    c.execute("PRAGMA journal_mode=WAL")
+    c.execute("PRAGMA synchronous=NORMAL")  # Trade-off: slightly faster writes, still safe
+    
     # ============ USERS TABLE ============
     c.execute("""
         CREATE TABLE IF NOT EXISTS users (

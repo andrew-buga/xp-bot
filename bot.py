@@ -2469,11 +2469,14 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         user = query.from_user
         lang = get_user_language(user.id)
         
+        logger.info(f"📧 Support button clicked by {user.id}, setting waiting_for_support=True")
+        
         # Set flag to catch next message as support message
         ctx.user_data["waiting_for_support"] = True
         ctx.user_data["support_lang"] = lang
         
         text = get_message("support_prompt", lang)
+        logger.info(f"📧 Sending support prompt to {user.id}")
         await _reply(update, text, parse_mode="Markdown")
         return
 
@@ -2481,13 +2484,14 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if data.startswith("lb:"):
         user_id = query.from_user.id
         lb_type = data[3:]  # "global" or "dept_X"
+        lang = get_user_language(user_id)
         
         medals = ["🥇", "🥈", "🥉"]
         
         if lb_type == "global":
             # Global leaderboard
             top = get_leaderboard()
-            title = "🏆 *Таблиця лідерів* (усі користувачам)"
+            title = "🏆 *Таблиця лідерів* (усі користувачи)"
         else:
             # Department leaderboard
             dept_id = int(lb_type.split("_")[1])
@@ -2509,7 +2513,9 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             icon = medals[i] if i < 3 else f"{i + 1}."
             lines.append(f"{icon} {_display_name(user)} — *{user.get('total_xp', 0)} XP*")
         
-        await _edit_message_text(query, "\n".join(lines), parse_mode="Markdown")
+        # Add back button
+        back_markup = InlineKeyboardMarkup([[_btn(get_message("back_btn", lang), callback_data="go_back")]])
+        await _edit_message_text(query, "\n".join(lines), reply_markup=back_markup, parse_mode="Markdown")
         return
     
     # Handle settings menu
@@ -2800,6 +2806,8 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle text input for wizards and ideas."""
     user = update.effective_user
     
+    logger.info(f"📝 Text input from {user.id}: waiting_for_support={ctx.user_data.get('waiting_for_support')}, submitting_idea={ctx.user_data.get('submitting_idea')}")
+    
     # Check if user is submitting an idea
     if ctx.user_data.get("submitting_idea"):
         await handle_idea_submission(update, ctx)
@@ -2808,6 +2816,8 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Check if user is writing support message
     if ctx.user_data.get("waiting_for_support"):
         message_text = (update.message.text or "").strip()
+        logger.info(f"💬 Support message from {user.id}: {message_text[:50] if message_text else 'EMPTY'}")
+        
         if not message_text:
             lang = ctx.user_data.get("support_lang", "en")
             await _reply(update, "❌ Повідомлення не може бути порожнім. Спробуй ще раз:")
@@ -2841,6 +2851,8 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 success_count += 1
             except Exception as e:
                 logger.error(f"Failed to send support message to admin {admin_id}: {e}")
+        
+        logger.info(f"✅ Support message from {user.id} sent to {success_count}/{len(ADMIN_IDS)} admins")
         
         # Confirm to user
         if success_count > 0:

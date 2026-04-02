@@ -2491,6 +2491,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if lb_type == "global":
             # Global leaderboard
             top = get_leaderboard()
+            logger.info(f"📊 Global leaderboard requested. Got {len(top) if top else 0} users")
             title = "🏆 *Таблиця лідерів* (усі користувачи)"
         else:
             # Department leaderboard
@@ -2499,6 +2500,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             
             # Sort by total_xp
             top = sorted(users_in_dept, key=lambda u: u.get('total_xp', 0), reverse=True)[:10]
+            logger.info(f"📊 Department {dept_id} leaderboard requested. Got {len(top) if top else 0} users")
             
             dept = get_department(dept_id)
             dept_name = dept['name'] if dept else "Unknown"
@@ -2511,7 +2513,12 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lines = [title + "\n"]
         for i, user in enumerate(top):
             icon = medals[i] if i < 3 else f"{i + 1}."
-            lines.append(f"{icon} {_display_name(user)} — *{user.get('total_xp', 0)} XP*")
+            # For both global and dept leaderboards, access row data using bracket notation
+            try:
+                xp_val = user['total_xp']
+            except (KeyError, TypeError):
+                xp_val = 0
+            lines.append(f"{icon} {_display_name(user)} — *{xp_val} XP*")
         
         # Add back button
         back_markup = InlineKeyboardMarkup([[_btn(get_message("back_btn", lang), callback_data="go_back")]])

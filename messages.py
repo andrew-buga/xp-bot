@@ -607,9 +607,9 @@ MESSAGES = {
     },
     
     "leaderboard_department": {
-        "en": "📊 {dept} Leaderboard",
-        "ro": "📊 Clasament {dept}",
-        "uk": "📊 Таблиця {dept}",
+        "en": "📊 {dept}",
+        "ro": "📊 {dept}",
+        "uk": "📊 {dept}",
     },
     
     # ========== HELP & ABOUT ==========

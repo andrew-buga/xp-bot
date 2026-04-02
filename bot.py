@@ -2474,7 +2474,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["support_lang"] = lang
         
         text = get_message("support_prompt", lang)
-        await _query_reply(query, text)
+        await _reply(update, text, parse_mode="Markdown")
         return
 
     # Handle leaderboard selection

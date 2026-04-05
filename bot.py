@@ -1328,7 +1328,6 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     register_user(user)
     
     lang = get_user_language(user.id)
-    db_user = get_user(user.id)
     user_depts = get_user_departments(user.id)
     if not user_depts:
         await _reply(update, get_message("dept_required", lang))
@@ -1803,9 +1802,9 @@ def _render_shop_admin() -> tuple[str, InlineKeyboardMarkup]:
             lines.append(f"{status} #{p['id']} — *{p['name']}* ({p['price']} XP)")
             toggle_icon = "🔴 Деакт." if p["is_active"] else "✅ Акт."
             rows.append([
-                _btn(f"✏️ Ред.", callback_data=f"a:shop_edit:{p['id']}"),
+                _btn("✏️ Ред.", callback_data=f"a:shop_edit:{p['id']}"),
                 _btn(toggle_icon, callback_data=f"a:shop_toggle:{p['id']}"),
-                _btn(f"🗑 Вид.", callback_data=f"a:shop_del:{p['id']}"),
+                _btn("🗑 Вид.", callback_data=f"a:shop_del:{p['id']}"),
             ])
 
     rows.append([_btn("➕ Додати товар", callback_data="a:shop_add")])
@@ -1896,8 +1895,6 @@ def _render_task_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeybo
 
 def _render_ideas_page(page: int, user_id: int, role: str) -> tuple[str, InlineKeyboardMarkup]:
     """Render paginated list of ideas for admin review."""
-    from datetime import datetime
-    
     # Get unreviewed ideas filtered by role
     all_ideas = get_unreviewed_ideas(role=role, user_id=user_id)
     
@@ -1941,8 +1938,8 @@ def _render_ideas_page(page: int, user_id: int, role: str) -> tuple[str, InlineK
             
             # Buttons for this idea
             rows.append([
-                _btn(f"✅ Розглянуто", callback_data=f"a:idea_mark:{idea['id']}:{page}"),
-                _btn(f"🗑 Видалити", callback_data=f"a:idea_del:{idea['id']}:{page}"),
+                _btn("✅ Розглянуто", callback_data=f"a:idea_mark:{idea['id']}:{page}"),
+                _btn("🗑 Видалити", callback_data=f"a:idea_del:{idea['id']}:{page}"),
             ])
     
     # Navigation
@@ -1956,29 +1953,6 @@ def _render_ideas_page(page: int, user_id: int, role: str) -> tuple[str, InlineK
     
     rows.append([_btn("⬅ В меню", callback_data="a:menu")])
     
-    return "\n".join(lines), InlineKeyboardMarkup(rows)
-
-
-def _render_shop_admin() -> tuple[str, InlineKeyboardMarkup]:
-    products = list_products(active_only=False)
-    lines = ["🛒 *Магазин товарів* (адмін)\n"]
-    rows = []
-
-    if not products:
-        lines.append("_Товарів ще немає. Натисни \"Додати товар\"._")
-    else:
-        for p in products:
-            status = "✅" if p["is_active"] else "🔴"
-            lines.append(f"{status} #{p['id']} — *{p['name']}* ({p['price']} XP)")
-            toggle_icon = "🔴 Деакт." if p["is_active"] else "✅ Акт."
-            rows.append([
-                _btn(f"✏️ Ред.", callback_data=f"a:shop_edit:{p['id']}"),
-                _btn(toggle_icon, callback_data=f"a:shop_toggle:{p['id']}"),
-                _btn(f"🗑 Вид.", callback_data=f"a:shop_del:{p['id']}"),
-            ])
-
-    rows.append([_btn("➕ Додати товар", callback_data="a:shop_add")])
-    rows.append([_btn("⬅ В меню", callback_data="a:menu")])
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 

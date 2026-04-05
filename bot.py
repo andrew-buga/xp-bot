@@ -84,6 +84,7 @@ from database import (
     get_dept_supervisors,
     is_supervisor_of_dept,
     get_users_in_department,
+    get_pending_submissions,
     DB_PATH,
 )
 
@@ -983,6 +984,7 @@ def _admin_menu_markup(lang: str = "uk", dept_id: int | None = None) -> InlineKe
         [
             [_btn(get_message("admin_add_task_btn", lang), callback_data=f"a:add:{dept_id or 'g'}")],
             [_btn(get_message("admin_delete_task_btn", lang), callback_data=f"a:dellist:0:{f'd{dept_id}' if dept_id else 'g'}")],
+            [_btn("⏳ Неповернені завдання", callback_data="a:pending:0")],
             [_btn(get_message("admin_users_btn", lang), callback_data="a:users:0")],
             [_btn(get_message("admin_ideas_btn", lang), callback_data=f"a:ideas:0:{f'd{dept_id}' if dept_id else 'g'}")],
             [_btn(get_message("admin_xp_btn", lang), callback_data=f"a:xp:{dept_id or 'g'}")],
@@ -2093,6 +2095,61 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         await _edit_message_text(query, get_message("admin_panel_header", lang), reply_markup=_admin_menu_markup(lang, dept_id), parse_mode="Markdown")
         return
 
+    if data.startswith("a:pending:"):
+        parts = data.split(":")
+        page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+        
+        pending_subs = get_pending_submissions()
+        
+        if not pending_subs:
+            await _edit_message_text(query, 
+                "✅ *Немає неповернених завдань!*\n\n"
+                "Усе оброблено.",
+                reply_markup=InlineKeyboardMarkup([
+                    [_btn("⬅ Назад", callback_data="a:menu")]
+                ]),
+                parse_mode="Markdown")
+            return
+        
+        # Paginate: 5 per page
+        per_page = 5
+        total_pages = (len(pending_subs) + per_page - 1) // per_page
+        page = max(0, min(page, total_pages - 1))
+        
+        start_idx = page * per_page
+        end_idx = start_idx + per_page
+        page_subs = pending_subs[start_idx:end_idx]
+        
+        text = f"⏳ *Неповернені завдання* [{page+1}/{total_pages}]\n\n"
+        
+        buttons = []
+        for sub in page_subs:
+            user_display = f"@{sub['username']}" if sub['username'] else (sub['first_name'] or f"User{sub['user_id']}")
+            text += f"👤 {user_display} (ID: {sub['user_id']})\n"
+            text += f"📌 Завдання: {sub['title']}\n"
+            text += f"📅 {sub['submitted_at'][:10]}\n"
+            text += "─" * 30 + "\n"
+            
+            buttons.append([
+                _btn("✅", callback_data=f"approve_{sub['id']}"),
+                _btn("❌", callback_data=f"reject_{sub['id']}")
+            ])
+        
+        # Pagination buttons
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(_btn("◀ Prev", callback_data=f"a:pending:{page - 1}"))
+        if page < total_pages - 1:
+            nav_buttons.append(_btn("Next ▶", callback_data=f"a:pending:{page + 1}"))
+        
+        if nav_buttons:
+            buttons.append(nav_buttons)
+        
+        buttons.append([_btn("⬅ Назад", callback_data="a:menu")])
+        
+        await _edit_message_text(query, text=text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+        return
+
     if data.startswith("a:add:"):
         dept_filter = data.split(":", 2)[2]
         dept_id = int(dept_filter[1:]) if dept_filter.startswith("d") else None
@@ -2657,7 +2714,12 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
 
         new_status = "approved" if action == "approve" else "rejected"
-        review_submission(sub_id, new_status, query.from_user.id)
+        # Atomic update: returns False if already processed by another admin
+        success = review_submission(sub_id, new_status, query.from_user.id)
+        
+        if not success:
+            await _query_answer(query, "⚠️ Вже оброблено іншим адміном.", show_alert=True)
+            return
 
         task = get_task(sub["task_id"])
         admin_tag = f"@{query.from_user.username}" if query.from_user.username else query.from_user.first_name

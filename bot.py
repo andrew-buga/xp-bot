@@ -1390,7 +1390,7 @@ async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, difficulty: str):
-    """Display paginated list of tasks (3 per page)."""
+    """Display paginated list of tasks (3 per page) - single edited message."""
     TASKS_PER_PAGE = 3
     
     # Get user object from either update or callback_query
@@ -1439,69 +1439,73 @@ async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, dif
     end_idx = start_idx + TASKS_PER_PAGE
     page_tasks = all_tasks[start_idx:end_idx]
     
-    # Display header
+    # Build single message with all content
     cat_names = {"easy": "Легкі", "medium": "Середні", "hard": "Важкі"}
-    header = (
-        f"📋 *{cat_names[difficulty]} завдання*\n\n"
+    message_text = (
+        f"📋 *{cat_names[difficulty]} завдання*\n"
         f"Сторінка *{current_page + 1}* з *{total_pages}*\n"
-        f"(Показано {len(page_tasks)} з {len(all_tasks)} завдань)\n"
+        f"(Показано {len(page_tasks)} з {len(all_tasks)} завдань)\n\n"
     )
     
-    # Edit or reply with header
-    try:
-        if update.callback_query:
-            await _edit_message_text(update.callback_query, header, parse_mode="Markdown")
-        else:
-            await _reply(update, header, parse_mode="Markdown")
-    except Exception:
-        pass
-    
-    # Display each task with button
-    for task in page_tasks:
+    # Add all tasks to message
+    for i, task in enumerate(page_tasks, 1):
         done = has_approved(user.id, task["id"])
         pending = has_pending(user.id, task["id"])
         
+        status = ""
         if done:
-            badge = " ✅"
+            status = " ✅"
         elif pending:
-            badge = " ⏳"
-        else:
-            badge = ""
+            status = " ⏳"
         
-        text = (
-            f"📌 *{task['title']}*{badge}\n"
+        message_text += (
+            f"*{i}. {task['title']}*{status}\n"
             f"{task['description']}\n"
-            f"💎 Нагорода: *{task['xp_reward']} XP*"
+            f"💎 Нагорода: *{task['xp_reward']} XP*\n\n"
         )
+    
+    # Build keyboard with task buttons and pagination
+    keyboard = []
+    
+    # Add button for each task
+    for task in page_tasks:
+        done = has_approved(user.id, task["id"])
+        pending = has_pending(user.id, task["id"])
         
         if done:
             btn = _btn("✅ Виконано", callback_data="noop")
         elif pending:
             btn = _btn("⏳ На перевірці", callback_data="noop")
         else:
-            btn = _btn("📤 Здати завдання", callback_data=f"submit_{task['id']}")
+            btn = _btn("📤 Здати", callback_data=f"submit_{task['id']}")
         
-        await _reply(update, text, 
-                    reply_markup=InlineKeyboardMarkup([[btn]]),
-                    parse_mode="Markdown")
+        keyboard.append([btn])
     
-    # Add pagination buttons (only if more than 1 page)
-    if total_pages > 1:
-        nav_buttons = []
-        
-        # Previous button
-        if current_page > 0:
-            nav_buttons.append(_btn("◀ Попереднія", callback_data=f"tasks_page_prev_{difficulty}"))
-        
-        # Next button
-        if current_page < total_pages - 1:
-            nav_buttons.append(_btn("Наступна ▶", callback_data=f"tasks_page_next_{difficulty}"))
-        
-        if nav_buttons:
-            nav_buttons.append(_btn(f"Категорії", callback_data="go_back"))
-            
-            markup = InlineKeyboardMarkup([nav_buttons])
-            await _reply(update, "⬇️ Навігація:", reply_markup=markup)
+    # Add pagination buttons at the bottom
+    nav_buttons = []
+    if current_page > 0:
+        nav_buttons.append(_btn("◀", callback_data=f"tasks_page_prev_{difficulty}"))
+    if current_page < total_pages - 1:
+        nav_buttons.append(_btn("▶", callback_data=f"tasks_page_next_{difficulty}"))
+    
+    if nav_buttons:
+        nav_buttons.append(_btn("🔙", callback_data="go_back"))
+        keyboard.append(nav_buttons)
+    else:
+        keyboard.append([_btn("🔙", callback_data="go_back")])
+    
+    markup = InlineKeyboardMarkup(keyboard)
+    
+    # Edit or reply with full message
+    try:
+        if query:
+            await _edit_message_text(query, message_text, reply_markup=markup, parse_mode="Markdown")
+        else:
+            await _reply(update, message_text, reply_markup=markup, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Error displaying tasks page: {e}")
+        if query:
+            await _query_answer(query, "❌ Помилка при завантаженні", show_alert=True)
 
 
 async def handle_tasks_page_next(update: Update, ctx: ContextTypes.DEFAULT_TYPE):

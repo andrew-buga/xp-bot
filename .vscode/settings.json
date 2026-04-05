@@ -1,7 +1,25 @@
 {
-  "cSpell.ignoreWords": ["cspellrc"],
+  "cSpell.ignoreWords": [
+    "cspellrc",
+    "xpbot",
+    "ADMIN",
+    "Andrey",
+    "Buga",
+    "aturinfo",
+    "SMS",
+    "SMM",
+    "XP",
+    "ATUR",
+    "venv"
+  ],
   "cSpell.ignorePaths": [
+    "**/*.py",
     "**/messages.py",
-    "**/.cspellrc.json"
-  ]
+    "**/.cspellrc.json",
+    "**/bot_data.db",
+    "**/*.jsonl",
+    "**/.venv/**",
+    "**/node_modules/**"
+  ],
+  "cSpell.language": "en,uk,ro"
 }

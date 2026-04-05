@@ -2,7 +2,13 @@
   "version": "0.2",
   "language": "en",
   "languages": ["en", "ro", "uk"],
-  "ignorePaths": [],
+  "ignorePaths": [
+    "*.py",
+    "node_modules",
+    ".venv",
+    "**/*.pyc",
+    ".git"
+  ],
   "ignoreWords": [
     "Selectează",
     "limba",

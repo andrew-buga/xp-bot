@@ -2870,7 +2870,12 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle text input for wizards and ideas."""
     user = update.effective_user
     
-    logger.info(f"📝 Text input from {user.id}: waiting_for_support={ctx.user_data.get('waiting_for_support')}, submitting_idea={ctx.user_data.get('submitting_idea')}")
+    logger.info(f"📝 Text input from {user.id}: waiting_for_support={ctx.user_data.get('waiting_for_support')}, submitting_idea={ctx.user_data.get('submitting_idea')}, submitting_task_id={ctx.user_data.get('submitting_task_id')}")
+    
+    # Check if user is submitting task proof (text-based)
+    if ctx.user_data.get("submitting_task_id"):
+        await _process_proof(update, ctx)
+        return
     
     # Check if user is submitting an idea
     if ctx.user_data.get("submitting_idea"):

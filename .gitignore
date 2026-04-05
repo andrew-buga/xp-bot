@@ -5,7 +5,11 @@ __pycache__/
 .env.example
 bot_data.db
 
-# Analytics & runtime data
+# Резервні копії - не повинні на GitHub
+backups/
+*.db.backup
+
+# Analytics & runtime data - приватні користувацькі дані
 analytics/
 supervision.log
 supervision_summary.json
@@ -18,3 +22,11 @@ register_*.py
 reset_*.py
 list_*.py
 add_admin_to_depts.py
+restore_*.py
+verify_*.py
+migrate_*.py
+assign_*.py
+
+# IDE локальні налаштування & OS
+.DS_Store
+Thumbs.db

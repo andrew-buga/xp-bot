@@ -67,7 +67,6 @@ from database import (
     get_user_departments,
     add_user_department,
     remove_user_department,
-    atomic_update_user_departments,
     get_user_role,
     set_user_global_role,
     get_user_global_role,
@@ -630,7 +629,7 @@ async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_
             dept_id = int(data.split("_")[2])
         except (IndexError, ValueError):
             await _query_answer(query, "❌ Помилка вибору. Спробуй ще раз.", show_alert=True)
-            return True  # 🔒 Stop handler chain
+            return
         
         if dept_id in selected:
             selected.remove(dept_id)
@@ -656,40 +655,25 @@ async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_
             get_message("dept_multi_select", lang),
             reply_markup=InlineKeyboardMarkup(rows),
             parse_mode="Markdown")
-        return True  # 🔒 Stop handler chain
+        return
     
     # Handle Done button
     if data == "dept_done" or data == "dept_add_done":
         if not selected:
             await _query_answer(query, "⚠️ Виберай хоча б один департамент!", show_alert=True)
-            return True  # 🔒 Stop handler chain
+            return
         
         # Save all selected departments
         # First clear existing ones
         current_depts = get_user_departments(user_id) or []
+        for dept_id in current_depts:
+            if dept_id not in selected:
+                remove_user_department(user_id, dept_id)
         
-        # 🔒 SAFETY CHECK: Log the operation
-        logger.info(f"📝 Department selection for {user_id}:")
-        logger.info(f"   Current in DB: {current_depts}")
-        logger.info(f"   Selected by user: {selected}")
-        
-        # Ensure we don't accidentally remove all departments
-        if not selected:
-            logger.error(f"❌ SECURITY: Attempted to remove ALL departments for {user_id}!")
-            await _query_answer(query, "❌ Синхронізація помилка. Спробуй ще раз.", show_alert=True)
-            return True
-        
-        # 🔒 USE ATOMIC UPDATE to prevent partial updates
-        try:
-            atomic_update_user_departments(user_id, selected)
-        except ValueError as e:
-            logger.error(f"❌ Cannot complete: {e}")
-            await _query_answer(query, "❌ Помилка: Необхідно вибрати хоча б один департамент!", show_alert=True)
-            return True
-        except Exception as e:
-            logger.error(f"❌ Database error: {e}")
-            await _query_answer(query, "❌ Помилка синхронізації з БД. Спробуй ще раз.", show_alert=True)
-            return True
+        # Add new ones
+        for dept_id in selected:
+            if dept_id not in current_depts:
+                add_user_department(user_id, dept_id)
         
         # 📊 Log user registration event
         log_event('user_registered', user_id=user_id, data={
@@ -714,7 +698,7 @@ async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_
         
         # Clean up context
         ctx.user_data.pop("selected_depts", None)
-        return True  # 🔒 Stop handler chain to prevent other handlers from processing
+        return
 
 
 @rate_limit_user

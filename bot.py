@@ -967,7 +967,7 @@ def _admin_menu_markup(lang: str = "uk", dept_id: int | None = None) -> InlineKe
         [
             [_btn(get_message("admin_add_task_btn", lang), callback_data=f"a:add:{dept_id or 'g'}")],
             [_btn(get_message("admin_delete_task_btn", lang), callback_data=f"a:dellist:0:{f'd{dept_id}' if dept_id else 'g'}")],
-            [_btn("⏳ Неповернені завдання", callback_data="a:pending:0")],
+            [_btn("⏳ Неперевірені завдання", callback_data="a:pending:0")],
             [_btn(get_message("admin_users_btn", lang), callback_data="a:users:0")],
             [_btn(get_message("admin_ideas_btn", lang), callback_data=f"a:ideas:0:{f'd{dept_id}' if dept_id else 'g'}")],
             [_btn(get_message("admin_xp_btn", lang), callback_data=f"a:xp:{dept_id or 'g'}")],
@@ -2077,7 +2077,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         end_idx = start_idx + per_page
         page_subs = subs[start_idx:end_idx]
         
-        text = f"⏳ *Неповернені завдання* [{page+1}/{total_pages}]\n\n"
+        text = f"⏳ *Неперевірені завдання* [{page+1}/{total_pages}]\n\n"
         
         buttons = []
         for sub in page_subs:

@@ -1,12 +1,11 @@
 ﻿import logging
-import sqlite3
 import time
 import asyncio
 from collections import defaultdict, deque
 from functools import wraps
-from datetime import datetime, timedelta
+from datetime import datetime
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, ChatMember
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -14,13 +13,11 @@ from telegram.ext import (
     ContextTypes,
     MessageHandler,
     filters,
-    JobQueue,
 )
 
 from config import ADMIN_IDS, BOT_TOKEN, TELEGRAM_CHANNEL_ID
 from messages import get_message
-from analytics import log_event, log_admin_action, log_error
-from supervision import update_supervision_summary
+from analytics import log_event, log_admin_action
 from database import (
     admin_subtract_xp,
     add_submission,
@@ -34,7 +31,6 @@ from database import (
     get_submission,
     get_task,
     get_tasks,
-    get_tasks_by_difficulty,
     get_tasks_filtered,
     get_user,
     get_user_rank,
@@ -58,7 +54,6 @@ from database import (
     get_product,
     spend_xp,
     add_to_inventory,
-    get_inventory,
     get_departments,
     get_department,
     mark_verified,
@@ -66,26 +61,19 @@ from database import (
     get_users_needing_recheck,
     add_idea,
     get_unreviewed_ideas,
-    mark_idea_reviewed,
     mark_idea_status,
-    get_idea,
     delete_idea,
     get_user_departments,
     add_user_department,
     remove_user_department,
-    has_user_department,
-    set_user_role,
     get_user_role,
     set_user_global_role,
     get_user_global_role,
     set_user_dept_role,
     get_user_dept_role,
     get_user_all_dept_roles,
-    get_dept_supervisors,
-    is_supervisor_of_dept,
     get_users_in_department,
     get_pending_submissions,
-    DB_PATH,
 )
 
 
@@ -975,11 +963,6 @@ async def cmd_editproduct(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 def _admin_menu_markup(lang: str = "uk", dept_id: int | None = None) -> InlineKeyboardMarkup:
     """Build admin menu. If dept_id provided, shows dept-specific options."""
-    dept_info = ""
-    if dept_id:
-        dept = get_department(dept_id)
-        dept_info = f"\n📍 Відділ: {dept['emoji']} {dept['name']}"
-    
     return InlineKeyboardMarkup(
         [
             [_btn(get_message("admin_add_task_btn", lang), callback_data=f"a:add:{dept_id or 'g'}")],
@@ -1323,9 +1306,9 @@ async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     register_user(user)
     
-    db_user = get_user(user.id)
+    user_data = get_user(user.id)
     
-    if db_user["is_banned"]:
+    if user_data["is_banned"]:
         lang = get_user_language(user.id)
         await _reply(update, get_message("banned", lang))
         return
@@ -2099,9 +2082,9 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         parts = data.split(":")
         page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
         
-        pending_subs = get_pending_submissions()
+        subs = get_pending_submissions()
         
-        if not pending_subs:
+        if not subs:
             await _edit_message_text(query, 
                 "✅ *Немає неповернених завдань!*\n\n"
                 "Усе оброблено.",
@@ -2113,12 +2096,12 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         
         # Paginate: 5 per page
         per_page = 5
-        total_pages = (len(pending_subs) + per_page - 1) // per_page
+        total_pages = (len(subs) + per_page - 1) // per_page
         page = max(0, min(page, total_pages - 1))
         
         start_idx = page * per_page
         end_idx = start_idx + per_page
-        page_subs = pending_subs[start_idx:end_idx]
+        page_subs = subs[start_idx:end_idx]
         
         text = f"⏳ *Неповернені завдання* [{page+1}/{total_pages}]\n\n"
         
@@ -2902,7 +2885,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 dept = get_department(dept_id[0])
                 if dept:
                     dept_name = dept["name"] if isinstance(dept, dict) else "Unknown"
-        except:
+        except Exception:
             pass
         
         # Format and send notification to admins
@@ -3212,7 +3195,6 @@ def main():
     from supervision import log_bot_startup
     users_count = count_users()
     depts_count = len(get_departments())
-    pending_submissions = len([s for s in get_unreviewed_ideas() or []])  # Approximate
     log_bot_startup(users_count, depts_count, 0, 0)
     
     app = Application.builder().token(BOT_TOKEN).build()

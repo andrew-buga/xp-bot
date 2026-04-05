@@ -74,6 +74,7 @@ from database import (
     get_user_all_dept_roles,
     get_users_in_department,
     get_pending_submissions,
+    get_approved_submissions,
 )
 
 
@@ -967,7 +968,7 @@ def _admin_menu_markup(lang: str = "uk", dept_id: int | None = None) -> InlineKe
         [
             [_btn(get_message("admin_add_task_btn", lang), callback_data=f"a:add:{dept_id or 'g'}")],
             [_btn(get_message("admin_delete_task_btn", lang), callback_data=f"a:dellist:0:{f'd{dept_id}' if dept_id else 'g'}")],
-            [_btn("⏳ Неперевірені завдання", callback_data="a:pending:0")],
+            [_btn("📋 Перегляд завдань", callback_data="a:review_tasks:0")],
             [_btn(get_message("admin_users_btn", lang), callback_data="a:users:0")],
             [_btn(get_message("admin_ideas_btn", lang), callback_data=f"a:ideas:0:{f'd{dept_id}' if dept_id else 'g'}")],
             [_btn(get_message("admin_xp_btn", lang), callback_data=f"a:xp:{dept_id or 'g'}")],
@@ -2052,18 +2053,41 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         await _edit_message_text(query, get_message("admin_panel_header", lang), reply_markup=_admin_menu_markup(lang, dept_id), parse_mode="Markdown")
         return
 
-    if data.startswith("a:pending:"):
+    if data.startswith("a:review_tasks:"):
         parts = data.split(":")
         page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
         
-        subs = get_pending_submissions()
+        # Show filter menu for task review
+        text = "📋 *Перегляд завдань*\n\nВибери які завдання переглянути:"
+        buttons = [
+            [_btn("⏳ Неперевірені завдання", callback_data="a:review_submissions:pending:0")],
+            [_btn("✅ Перевірені завдання", callback_data="a:review_submissions:approved:0")],
+            [_btn("⬅ Назад", callback_data="a:menu")],
+        ]
+        await _edit_message_text(query, text=text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+        return
+
+    if data.startswith("a:review_submissions:"):
+        parts = data.split(":")
+        status = parts[2] if len(parts) > 2 else "pending"
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+        
+        # Get submissions by status
+        if status == "pending":
+            subs = get_pending_submissions()
+            title = "⏳ *Неперевірені завдання*"
+        elif status == "approved":
+            subs = get_approved_submissions()
+            title = "✅ *Перевірені завдання*"
+        else:
+            subs = []
+            title = "📋 *Завдання*"
         
         if not subs:
             await _edit_message_text(query, 
-                "✅ *Немає неповернених завдань!*\n\n"
-                "Усе оброблено.",
+                f"{title}\n\n✅ Нема завдань.",
                 reply_markup=InlineKeyboardMarkup([
-                    [_btn("⬅ Назад", callback_data="a:menu")]
+                    [_btn("⬅ Назад", callback_data="a:review_tasks:0")]
                 ]),
                 parse_mode="Markdown")
             return
@@ -2077,7 +2101,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         end_idx = start_idx + per_page
         page_subs = subs[start_idx:end_idx]
         
-        text = f"⏳ *Неперевірені завдання* [{page+1}/{total_pages}]\n\n"
+        text = f"{title} [{page+1}/{total_pages}]\n\n"
         
         buttons = []
         for sub in page_subs:
@@ -2085,26 +2109,40 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             text += f"👤 {user_display} (ID: {sub['user_id']})\n"
             text += f"📌 Завдання: {sub['title']}\n"
             text += f"📅 {sub['submitted_at'][:10]}\n"
-            text += "─" * 30 + "\n"
             
-            buttons.append([
-                _btn("✅", callback_data=f"approve_{sub['id']}"),
-                _btn("❌", callback_data=f"reject_{sub['id']}")
-            ])
+            # For pending, show approve/reject buttons; for approved, show timestamp
+            if status == "pending":
+                text += "─" * 30 + "\n"
+                buttons.append([
+                    _btn("✅", callback_data=f"approve_{sub['id']}"),
+                    _btn("❌", callback_data=f"reject_{sub['id']}")
+                ])
+            else:
+                reviewer_name = f" (@{sub['reviewer_id']})" if sub['reviewer_id'] else ""
+                text += f"✅ Підтверджено{reviewer_name}\n"
+                text += "─" * 30 + "\n"
         
         # Pagination buttons
         nav_buttons = []
         if page > 0:
-            nav_buttons.append(_btn("◀ Prev", callback_data=f"a:pending:{page - 1}"))
+            nav_buttons.append(_btn("◀ Prev", callback_data=f"a:review_submissions:{status}:{page - 1}"))
         if page < total_pages - 1:
-            nav_buttons.append(_btn("Next ▶", callback_data=f"a:pending:{page + 1}"))
+            nav_buttons.append(_btn("Next ▶", callback_data=f"a:review_submissions:{status}:{page + 1}"))
         
         if nav_buttons:
             buttons.append(nav_buttons)
         
-        buttons.append([_btn("⬅ Назад", callback_data="a:menu")])
+        buttons.append([_btn("⬅ Назад", callback_data="a:review_tasks:0")])
         
         await _edit_message_text(query, text=text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+        return
+
+    if data.startswith("a:pending:"):
+        # Legacy redirect to new review_submissions handler
+        parts = data.split(":")
+        page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+        query.data = f"a:review_submissions:pending:{page}"
+        await _handle_admin_callback(update, ctx)
         return
 
     if data.startswith("a:add:"):

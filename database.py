@@ -1137,6 +1137,27 @@ def get_pending_submissions():
     return [dict(row) for row in rows]
 
 
+def get_approved_submissions():
+    """Get all approved submissions with user and task info."""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        SELECT 
+            s.id, s.user_id, s.task_id, s.proof_text, s.proof_file_id,
+            s.submitted_at, s.status, s.reviewed_at, s.reviewer_id,
+            u.username, u.first_name,
+            t.title
+        FROM submissions s
+        JOIN users u ON s.user_id = u.user_id
+        JOIN tasks t ON s.task_id = t.id
+        WHERE s.status='approved'
+        ORDER BY s.reviewed_at DESC
+    """)
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
 def get_stats():
     conn = get_conn()
     c = conn.cursor()

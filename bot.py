@@ -26,6 +26,7 @@ from database import (
     ban_user,
     count_users,
     delete_task,
+    ensure_user_exists,
     get_leaderboard,
     get_stats,
     get_submission,
@@ -829,6 +830,9 @@ async def handle_idea_anonymity_choice(update: Update, ctx: ContextTypes.DEFAULT
     
     draft = ctx.user_data["idea_draft"]
     is_anonymous = query.data == "idea_anon"
+    
+    # Ensure user exists in database with latest username
+    ensure_user_exists(user_id, user.username, user.first_name)
     
     # Save idea to DB
     idea_id = add_idea(
@@ -2807,6 +2811,9 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _reply(update, get_message("no_proof", lang))
         return
 
+    # Ensure user exists in database with latest username/first_name
+    ensure_user_exists(user.id, user.username, user.first_name)
+    
     sub_id = add_submission(user.id, task_id, proof_text, proof_file_id)
     ctx.user_data.pop("submitting_task_id", None)
     

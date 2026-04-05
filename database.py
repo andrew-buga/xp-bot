@@ -1148,9 +1148,9 @@ def get_approved_submissions():
             u.username, u.first_name,
             t.title
         FROM submissions s
-        JOIN users u ON s.user_id = u.user_id
-        JOIN tasks t ON s.task_id = t.id
-        WHERE s.status='approved'
+        LEFT JOIN users u ON s.user_id = u.user_id
+        LEFT JOIN tasks t ON s.task_id = t.id
+        WHERE s.status = 'approved'
         ORDER BY s.reviewed_at DESC
     """)
     rows = c.fetchall()

@@ -35,7 +35,18 @@
     "Користувачів",
     "Видалення",
     "bots",
-    "getmechanged"
+    "depts",
+    "Depts",
+    "journalctl",
+    "AUTOINCREMENT",
+    "fetchone",
+    "fetchall",
+    "isoformat",
+    "andriybuga",
+    "viskasmeowww",
+    "nvdprch",
+    "robertkonoplia",
+    "dariinaass"
   ],
   "cSpell.ignorePaths": [
     "**/*.py",

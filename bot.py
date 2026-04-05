@@ -2118,7 +2118,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
                     _btn("❌", callback_data=f"reject_{sub['id']}")
                 ])
             else:
-                reviewer_name = f" (@{sub['reviewer_id']})" if sub['reviewer_id'] else ""
+                reviewer_name = f" (@{sub['reviewer_username']})" if sub['reviewer_username'] else ""
                 text += f"✅ Підтверджено{reviewer_name}\n"
                 text += "─" * 30 + "\n"
         

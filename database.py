@@ -1146,10 +1146,12 @@ def get_approved_submissions():
             s.id, s.user_id, s.task_id, s.proof_text, s.proof_file_id,
             s.submitted_at, s.status, s.reviewed_at, s.reviewer_id,
             u.username, u.first_name,
-            t.title
+            t.title,
+            ru.username AS reviewer_username
         FROM submissions s
         LEFT JOIN users u ON s.user_id = u.user_id
         LEFT JOIN tasks t ON s.task_id = t.id
+        LEFT JOIN users ru ON s.reviewer_id = ru.user_id
         WHERE s.status = 'approved'
         ORDER BY s.reviewed_at DESC
     """)

@@ -619,6 +619,72 @@ def remove_user_department(user_id, dept_id):
     conn.close()
 
 
+def atomic_update_user_departments(user_id, new_dept_ids):
+    """🔒 ATOMIC: Update user's departments in single transaction
+    
+    Removes old departments and adds new ones atomically.
+    This prevents partial updates if connection fails.
+    
+    Args:
+        user_id: The user ID
+        new_dept_ids: List of department IDs to set (complete replacement)
+    
+    Raises:
+        Exception if user ends up with 0 departments (safety check)
+    """
+    import logging
+    logger = logging.getLogger("xp_bot")
+    
+    # Validation
+    if not new_dept_ids:
+        logger.error(f"❌ SECURITY: Attempted to set EMPTY departments for user {user_id}!")
+        raise ValueError(f"User {user_id} cannot have zero departments")
+    
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        
+        # START TRANSACTION (implicit in SQLite)
+        current_depts = []
+        c.execute("SELECT department_id FROM users_departments WHERE user_id=?", (user_id,))
+        current_depts = [row[0] for row in c.fetchall()]
+        
+        logger.info(f"🔄 ATOMIC UPDATE: user {user_id}")
+        logger.info(f"   Before: {current_depts}")
+        logger.info(f"   After: {new_dept_ids}")
+        
+        # Delete removed departments
+        for dept_id in current_depts:
+            if dept_id not in new_dept_ids:
+                c.execute("DELETE FROM users_departments WHERE user_id=? AND department_id=?", (user_id, dept_id))
+                logger.debug(f"   - Deleted dept {dept_id}")
+        
+        # Add new departments
+        for dept_id in new_dept_ids:
+            if dept_id not in current_depts:
+                c.execute(
+                    "INSERT OR IGNORE INTO users_departments (user_id, department_id, dept_role, joined_at) VALUES (?, ?, 'member', datetime('now'))",
+                    (user_id, dept_id)
+                )
+                logger.debug(f"   + Added dept {dept_id}")
+        
+        # COMMIT TRANSACTION
+        conn.commit()
+        logger.info(f"✅ ATOMIC UPDATE COMMITTED for user {user_id}")
+        
+        # Verify
+        c.execute("SELECT department_id FROM users_departments WHERE user_id=?", (user_id,))
+        final_depts = [row[0] for row in c.fetchall()]
+        logger.info(f"   Verified: {final_depts}")
+        
+        conn.close()
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ ATOMIC UPDATE FAILED for user {user_id}: {e}")
+        raise
+
+
 def has_user_department(user_id, dept_id):
     """Check if user is in department"""
     conn = get_conn()

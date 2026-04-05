@@ -2660,6 +2660,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         review_submission(sub_id, new_status, query.from_user.id)
 
         task = get_task(sub["task_id"])
+        task_dict = dict(task) if task else {}  # Convert Row to dict for .get() access
         admin_tag = f"@{query.from_user.username}" if query.from_user.username else query.from_user.first_name
 
         if action == "approve":
@@ -2669,7 +2670,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             log_event('task_approved', user_id=sub["user_id"], admin_id=query.from_user.id, data={
                 'submission_id': sub_id,
                 'task_id': sub["task_id"],
-                'task_title': task.get('title', '')[:50],
+                'task_title': task_dict.get('title', '')[:50],
                 'xp_awarded': task["xp_reward"]
             })
             log_event('xp_awarded', user_id=sub["user_id"], data={
@@ -2690,7 +2691,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             log_event('task_rejected', user_id=sub["user_id"], admin_id=query.from_user.id, data={
                 'submission_id': sub_id,
                 'task_id': sub["task_id"],
-                'task_title': task.get('title', '')[:50]
+                'task_title': task_dict.get('title', '')[:50]
             })
             
             result_icon = "❌ Відхилено"
@@ -2753,12 +2754,13 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     sub_id = add_submission(user.id, task_id, proof_text, proof_file_id)
     ctx.user_data.pop("submitting_task_id", None)
     
+    task_dict = dict(task) if task else {}  # Convert Row to dict for .get() access
     # 📊 Log task submission event
     log_event('task_submitted', user_id=user.id, data={
         'task_id': task_id,
         'submission_id': sub_id,
-        'difficulty': task.get('difficulty', 'unknown'),
-        'title': task.get('title', '')[:50]
+        'difficulty': task_dict.get('difficulty_level', 'unknown'),
+        'title': task_dict.get('title', '')[:50]
     })
 
     await _reply(

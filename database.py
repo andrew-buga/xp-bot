@@ -228,19 +228,22 @@ def init_db():
     # Migrate data from old departments_json field if it exists and table is empty
     c.execute("SELECT COUNT(*) FROM users_departments")
     if c.fetchone()[0] == 0:
-        c.execute("SELECT user_id, departments_json FROM users WHERE departments_json IS NOT NULL")
-        for user_id, departments_json in c.fetchall():
-            try:
-                dept_list = json.loads(departments_json)
-                for dept_id in dept_list:
-                    c.execute(
-                        """INSERT OR IGNORE INTO users_departments 
-                           (user_id, department_id, dept_role, joined_at)
-                           VALUES (?, ?, 'member', ?)""",
-                        (user_id, dept_id, datetime.now().isoformat())
-                    )
-            except (json.JSONDecodeError, TypeError):
-                pass  # Skip invalid data
+        try:
+            c.execute("SELECT user_id, departments_json FROM users WHERE departments_json IS NOT NULL")
+            for user_id, departments_json in c.fetchall():
+                try:
+                    dept_list = json.loads(departments_json)
+                    for dept_id in dept_list:
+                        c.execute(
+                            """INSERT OR IGNORE INTO users_departments 
+                               (user_id, department_id, dept_role, joined_at)
+                               VALUES (?, ?, 'member', ?)""",
+                            (user_id, dept_id, datetime.now().isoformat())
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass  # Skip invalid data
+        except Exception:
+            pass  # Column might not exist anymore, skip migration
 
     # ============ INSERT 60+ TASKS IF TABLE IS EMPTY ============
     c.execute("SELECT COUNT(*) FROM tasks")

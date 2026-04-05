@@ -534,7 +534,7 @@ def get_user(user_id):
     c.execute("SELECT * FROM users WHERE user_id=?", (user_id,))
     row = c.fetchone()
     conn.close()
-    return row
+    return dict(row) if row else None
 
 
 def get_user_language(user_id):
@@ -872,7 +872,7 @@ def get_leaderboard(limit=10):
     c.execute("SELECT * FROM users ORDER BY total_xp DESC LIMIT ?", (limit,))
     rows = c.fetchall()
     conn.close()
-    return rows
+    return [dict(row) for row in rows] if rows else []
 
 
 def count_users():
@@ -914,7 +914,7 @@ def get_user_summary(user_id):
     )
     row = c.fetchone()
     conn.close()
-    return row
+    return dict(row) if row else None
 
 
 def get_user_rank(user_id):
@@ -950,7 +950,7 @@ def get_department(department_id):
     c.execute("SELECT * FROM departments WHERE id=?", (department_id,))
     row = c.fetchone()
     conn.close()
-    return row
+    return dict(row) if row else None
 
 
 # ============ TASKS ----------
@@ -962,7 +962,7 @@ def get_tasks():
     c.execute("SELECT * FROM tasks WHERE is_active=1")
     rows = c.fetchall()
     conn.close()
-    return rows
+    return [dict(row) for row in rows] if rows else []
 
 
 def get_tasks_by_difficulty(difficulty):
@@ -972,7 +972,7 @@ def get_tasks_by_difficulty(difficulty):
     c.execute("SELECT * FROM tasks WHERE is_active=1 AND difficulty_level=?", (difficulty,))
     rows = c.fetchall()
     conn.close()
-    return rows
+    return [dict(row) for row in rows] if rows else []
 
 
 def get_tasks_filtered(difficulty, user_dept_id=None):
@@ -1016,7 +1016,7 @@ def get_tasks_filtered(difficulty, user_dept_id=None):
     
     rows = c.fetchall()
     conn.close()
-    return rows
+    return [dict(row) for row in rows] if rows else []
 
 
 def get_task(task_id):
@@ -1025,7 +1025,7 @@ def get_task(task_id):
     c.execute("SELECT * FROM tasks WHERE id=?", (task_id,))
     row = c.fetchone()
     conn.close()
-    return row
+    return dict(row) if row else None
 
 
 def add_task(title, description, xp_reward, difficulty_level="easy", department_id=None):
@@ -1071,7 +1071,7 @@ def get_submission(submission_id):
     c.execute("SELECT * FROM submissions WHERE id=?", (submission_id,))
     row = c.fetchone()
     conn.close()
-    return row
+    return dict(row) if row else None
 
 
 def review_submission(submission_id, status, reviewer_id):
@@ -1218,7 +1218,7 @@ def get_product(product_id):
     c.execute("SELECT * FROM shop WHERE id=?", (product_id,))
     row = c.fetchone()
     conn.close()
-    return row
+    return dict(row) if row else None
 
 
 # ============ INVENTORY ----------
@@ -1330,7 +1330,7 @@ def get_idea(idea_id):
     c.execute("SELECT * FROM ideas WHERE id=?", (idea_id,))
     row = c.fetchone()
     conn.close()
-    return row
+    return dict(row) if row else None
 
 
 def delete_idea(idea_id):

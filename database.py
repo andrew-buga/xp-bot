@@ -559,40 +559,14 @@ def set_user_language(user_id, language):
     conn.close()
 
 
-def ensure_user_exists(user_id, username=None, first_name=None):
-    """Ensure user exists in database with latest username/first_name.
-    If user doesn't exist, create with provided data.
-    If exists, update username and first_name if provided."""
+def update_user_username(user_id, username, first_name):
+    """Update user's username and first_name if they exist in database.
+    Does nothing if user doesn't exist."""
     conn = get_conn()
     c = conn.cursor()
-    
-    # Check if user exists
-    c.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
-    exists = c.fetchone() is not None
-    
-    if exists:
-        # Update existing user with new username/first_name
-        if username or first_name:
-            updates = []
-            params = []
-            if username:
-                updates.append("username = ?")
-                params.append(username)
-            if first_name:
-                updates.append("first_name = ?")
-                params.append(first_name)
-            params.append(user_id)
-            
-            if updates:
-                query = f"UPDATE users SET {', '.join(updates)} WHERE user_id = ?"
-                c.execute(query, params)
-    else:
-        # Create new user
-        c.execute("""
-            INSERT INTO users (user_id, username, first_name, xp, total_xp, spendable_xp, joined_at, language)
-            VALUES (?, ?, ?, 0, 0, 0, ?, 'uk')
-        """, (user_id, username, first_name, datetime.now().isoformat()))
-    
+    c.execute("""
+        UPDATE users SET username=?, first_name=? WHERE user_id=?
+    """, (username, first_name, user_id))
     conn.commit()
     conn.close()
 

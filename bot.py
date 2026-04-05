@@ -23,6 +23,7 @@ from database import (
     add_submission,
     add_task,
     add_xp,
+    atomic_award_xp,
     ban_user,
     count_users,
     delete_task,
@@ -2724,7 +2725,18 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         admin_tag = f"@{query.from_user.username}" if query.from_user.username else query.from_user.first_name
 
         if action == "approve":
-            add_xp(sub["user_id"], task["xp_reward"])
+            # 🔒 Use atomic XP award with verification
+            xp_success = atomic_award_xp(
+                user_id=sub["user_id"],
+                amount=task["xp_reward"],
+                task_id=sub["task_id"],
+                dept_id=task.get("department_id")
+            )
+            
+            if not xp_success:
+                logger.error(f"❌ Failed to award XP for submission {sub_id}")
+                await _query_answer(query, "⚠️ Помилка при нарахуванні XP. Спробуй ще раз.", show_alert=True)
+                return
             
             # 📊 Log task approval and XP award events
             log_event('task_approved', user_id=sub["user_id"], admin_id=query.from_user.id, data={

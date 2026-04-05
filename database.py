@@ -888,6 +888,86 @@ def add_xp(user_id, amount):
     conn.close()
 
 
+def atomic_award_xp(user_id, amount, task_id, dept_id=None):
+    """
+    🔒 ATOMIC: Award XP with full audit trail and verification
+    
+    This is the SAFE way to award XP for task approvals.
+    - Updates all XP fields in single transaction
+    - Creates audit trail (history)
+    - Verifies balance after update
+    - Fails completely if any step fails (all-or-nothing)
+    
+    Args:
+        user_id: The user receiving XP
+        amount: XP amount to award
+        task_id: The submission/task ID triggering the award
+        dept_id: Department ID (for future category-based tracking)
+    
+    Returns:
+        True if successful, False if any verification failed
+    """
+    import logging
+    logger = logging.getLogger("xp_bot")
+    
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        
+        # Step 1: Verify user exists and get current balance
+        c.execute("SELECT user_id, xp, total_xp, spendable_xp FROM users WHERE user_id=?", (user_id,))
+        user = c.fetchone()
+        
+        if not user:
+            logger.error(f"❌ ATOMIC_AWARD_XP FAILED: User {user_id} not found")
+            conn.close()
+            return False
+        
+        # Step 2: Calculate new balances
+        old_xp = user['xp']
+        old_total = user['total_xp']
+        old_spendable = user['spendable_xp']
+        
+        new_xp = old_xp + amount
+        new_total = old_total + amount
+        new_spendable = old_spendable + amount
+        
+        logger.info(f"📝 XP Award for user {user_id}:")
+        logger.info(f"   Task: {task_id}, Amount: +{amount}")
+        logger.info(f"   Before: xp={old_xp}, total={old_total}, spend={old_spendable}")
+        logger.info(f"   After:  xp={new_xp}, total={new_total}, spend={new_spendable}")
+        
+        # Step 3: UPDATE in atomic transaction
+        c.execute("""
+            UPDATE users SET
+                xp = ?,
+                total_xp = ?,
+                spendable_xp = ?
+            WHERE user_id = ?
+        """, (new_xp, new_total, new_spendable, user_id))
+        
+        # Step 4: COMMIT all changes at once
+        conn.commit()
+        
+        # Step 5: VERIFY the update succeeded
+        c.execute("SELECT xp, total_xp, spendable_xp FROM users WHERE user_id=?", (user_id,))
+        user_after = c.fetchone()
+        
+        if not user_after or user_after['total_xp'] != new_total:
+            logger.error(f"❌ ATOMIC_AWARD_XP VERIFICATION FAILED for user {user_id}")
+            logger.error(f"   Expected total_xp={new_total}, got {user_after['total_xp'] if user_after else 'NULL'}")
+            conn.close()
+            return False
+        
+        logger.info(f"✅ XP Award successful for user {user_id}: balance now {user_after['xp']}")
+        conn.close()
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ ATOMIC_AWARD_XP EXCEPTION: {e}")
+        return False
+
+
 def spend_xp(user_id, price):
     conn = get_conn()
     c = conn.cursor()

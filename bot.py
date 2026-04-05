@@ -833,7 +833,7 @@ async def handle_idea_anonymity_choice(update: Update, ctx: ContextTypes.DEFAULT
     is_anonymous = query.data == "idea_anon"
     
     # Update user's username in case they changed it (without registering)
-    update_user_username(user_id, user.username, user.first_name)
+    update_user_username(user_id, query.from_user.username, query.from_user.first_name)
     
     # Save idea to DB
     idea_id = add_idea(
@@ -1729,6 +1729,7 @@ def _render_user_detail(target_user_id: int, page: int, admin_user_id: int | Non
         f"Username: {_display_name(user)}",
         f"Name: {user['first_name'] or '-'}",
         f"Joined: {user['joined_at'] or '-'}",
+        f"⭐ Актуальний XP: {user['xp']}",
         f"🏆 Загальний XP: {user['total_xp']}",
         f"💰 Доступний XP: {user['spendable_xp']}",
         f"Status: *{status}*",

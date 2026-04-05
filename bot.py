@@ -1390,7 +1390,7 @@ async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, difficulty: str):
-    """Display paginated list of tasks - fresh header/tasks/nav, delete old nav on pagination."""
+    """Display paginated tasks - delete old nav on page change."""
     TASKS_PER_PAGE = 3
     
     # Get user object from either update or callback_query
@@ -1439,21 +1439,20 @@ async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, dif
     end_idx = start_idx + TASKS_PER_PAGE
     page_tasks = all_tasks[start_idx:end_idx]
     
-    # If pagination - delete old nav message first
+    # Delete old nav message if pagination
     if query:
         try:
             await query.delete_message()
         except Exception:
             pass
     
-    # Build and send header message
+    # Build and send header
     cat_names = {"easy": "Легкі", "medium": "Середні", "hard": "Важкі"}
     header = (
         f"📋 *{cat_names[difficulty]} завдання*\n"
         f"Сторінка *{current_page + 1}* з *{total_pages}*\n"
         f"(Показано {len(page_tasks)} з {len(all_tasks)} завдань)"
     )
-    
     await _reply(update, header, parse_mode="Markdown")
     
     # Display each task with button
@@ -1485,25 +1484,22 @@ async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, dif
                     reply_markup=InlineKeyboardMarkup([[btn]]),
                     parse_mode="Markdown")
     
-    # Build and send navigation buttons
+    # Build and send navigation
     if total_pages > 1:
         nav_buttons = []
         
-        # Previous button
         if current_page > 0:
             nav_buttons.append(_btn("◀ Попереднія", callback_data=f"tasks_page_prev_{difficulty}"))
         
-        # Next button
         if current_page < total_pages - 1:
             nav_buttons.append(_btn("Наступна ▶", callback_data=f"tasks_page_next_{difficulty}"))
         
         nav_buttons.append(_btn("Категорії", callback_data="go_back"))
-        nav_text = f"⬇️ Навігація (сторінка {current_page + 1}/{total_pages}):"
         
+        nav_text = f"⬇️ Навігація (сторінка {current_page + 1}/{total_pages}):"
         markup = InlineKeyboardMarkup([nav_buttons])
         await _reply(update, nav_text, reply_markup=markup)
     else:
-        # Single page - just send back button
         markup = InlineKeyboardMarkup([[_btn("Категорії", callback_data="go_back")]])
         await _reply(update, "⬇️", reply_markup=markup)
 

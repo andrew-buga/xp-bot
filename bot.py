@@ -77,6 +77,10 @@ from database import (
     get_users_in_department,
     get_pending_submissions,
     get_approved_submissions,
+    add_task_execution,
+    update_task_execution,
+    get_task_execution_history,
+    update_task_execution_by_task,
 )
 
 
@@ -1355,7 +1359,7 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Handle task category selection and display filtered tasks."""
+    """Handle task category selection and initialize pagination."""
     query = update.callback_query
     await _query_answer(query)
     
@@ -1378,30 +1382,82 @@ async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _query_answer(query, "❌ Обери департамент через /start", show_alert=True)
         return
     
-    # Get filtered tasks for primary department
-    user_dept_id = user_depts[0]
-    tasks = get_tasks_filtered(difficulty, user_dept_id)
+    # Reset pagination for this difficulty
+    ctx.user_data[f"tasks_page_{difficulty}"] = 0
     
-    if not tasks:
-        await _edit_message_text(query,
-            f"😕 На жаль, завдань рівня «{difficulty}» немає.\n\n"
-            "Спробуй інший рівень складності!",
-            reply_markup=InlineKeyboardMarkup([
-                [_btn("📗 Легкі", callback_data="tasks_easy")],
-                [_btn("📙 Середні", callback_data="tasks_medium")],
-                [_btn("📕 Важкі", callback_data="tasks_hard")],
-            ]),
-            parse_mode="Markdown")
+    # Show paginated tasks
+    await display_tasks_page(update, ctx, difficulty)
+
+
+async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, difficulty: str):
+    """Display paginated list of tasks (3 per page)."""
+    TASKS_PER_PAGE = 3
+    
+    # Get user object from either update or callback_query
+    if update.callback_query:
+        user = update.callback_query.from_user
+        query = update.callback_query
+    else:
+        user = update.effective_user
+        query = None
+    
+    user_depts = get_user_departments(user.id)
+    if not user_depts:
+        if query:
+            await _query_answer(query, "❌ Обери департамент", show_alert=True)
         return
     
-    # Display tasks
-    cat_names = {"easy": "Легкі", "medium": "Середні", "hard": "Важкі"}
-    await _edit_message_text(query,
-        f"📋 *{cat_names[difficulty]} завдання*\n\n"
-        f"Нижче показані завдання для твого департаменту.",
-        parse_mode="Markdown")
+    # Get filtered tasks for primary department
+    user_dept_id = user_depts[0]
+    all_tasks = get_tasks_filtered(difficulty, user_dept_id)
     
-    for task in tasks:
+    if not all_tasks:
+        msg = f"😕 На жаль, завдань рівня «{difficulty}» немає.\n\nСпробуй інший рівень складності!"
+        markup = InlineKeyboardMarkup([
+            [_btn("📗 Легкі", callback_data="tasks_easy")],
+            [_btn("📙 Середні", callback_data="tasks_medium")],
+            [_btn("📕 Важкі", callback_data="tasks_hard")],
+        ])
+        
+        if query:
+            await _edit_message_text(query, msg, reply_markup=markup, parse_mode="Markdown")
+        else:
+            await _reply(update, msg, reply_markup=markup, parse_mode="Markdown")
+        return
+    
+    # Get current page
+    current_page = ctx.user_data.get(f"tasks_page_{difficulty}", 0)
+    total_pages = (len(all_tasks) + TASKS_PER_PAGE - 1) // TASKS_PER_PAGE
+    
+    # Validate page number
+    if current_page >= total_pages:
+        current_page = max(0, total_pages - 1)
+        ctx.user_data[f"tasks_page_{difficulty}"] = current_page
+    
+    # Get tasks for this page
+    start_idx = current_page * TASKS_PER_PAGE
+    end_idx = start_idx + TASKS_PER_PAGE
+    page_tasks = all_tasks[start_idx:end_idx]
+    
+    # Display header
+    cat_names = {"easy": "Легкі", "medium": "Середні", "hard": "Важкі"}
+    header = (
+        f"📋 *{cat_names[difficulty]} завдання*\n\n"
+        f"Сторінка *{current_page + 1}* з *{total_pages}*\n"
+        f"(Показано {len(page_tasks)} з {len(all_tasks)} завдань)\n"
+    )
+    
+    # Edit or reply with header
+    try:
+        if update.callback_query:
+            await _edit_message_text(update.callback_query, header, parse_mode="Markdown")
+        else:
+            await _reply(update, header, parse_mode="Markdown")
+    except Exception:
+        pass
+    
+    # Display each task with button
+    for task in page_tasks:
         done = has_approved(user.id, task["id"])
         pending = has_pending(user.id, task["id"])
         
@@ -1428,6 +1484,54 @@ async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _reply(update, text, 
                     reply_markup=InlineKeyboardMarkup([[btn]]),
                     parse_mode="Markdown")
+    
+    # Add pagination buttons (only if more than 1 page)
+    if total_pages > 1:
+        nav_buttons = []
+        
+        # Previous button
+        if current_page > 0:
+            nav_buttons.append(_btn("◀ Попереднія", callback_data=f"tasks_page_prev_{difficulty}"))
+        
+        # Next button
+        if current_page < total_pages - 1:
+            nav_buttons.append(_btn("Наступна ▶", callback_data=f"tasks_page_next_{difficulty}"))
+        
+        if nav_buttons:
+            nav_buttons.append(_btn(f"Категорії", callback_data="go_back"))
+            
+            markup = InlineKeyboardMarkup([nav_buttons])
+            await _reply(update, "⬇️ Навігація:", reply_markup=markup)
+
+
+async def handle_tasks_page_next(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle next page button for tasks."""
+    query = update.callback_query
+    await _query_answer(query)
+    
+    # Extract difficulty from callback_data (e.g., "tasks_page_next_easy")
+    difficulty = query.data.split("_")[-1]  # Gets 'easy', 'medium', or 'hard'
+    
+    # Increment page
+    current_page = ctx.user_data.get(f"tasks_page_{difficulty}", 0)
+    ctx.user_data[f"tasks_page_{difficulty}"] = current_page + 1
+    
+    await display_tasks_page(update, ctx, difficulty)
+
+
+async def handle_tasks_page_prev(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle previous page button for tasks."""
+    query = update.callback_query
+    await _query_answer(query)
+    
+    # Extract difficulty from callback_data (e.g., "tasks_page_prev_easy")
+    difficulty = query.data.split("_")[-1]
+    
+    # Decrement page
+    current_page = ctx.user_data.get(f"tasks_page_{difficulty}", 0)
+    ctx.user_data[f"tasks_page_{difficulty}"] = max(0, current_page - 1)
+    
+    await display_tasks_page(update, ctx, difficulty)
 
 
 
@@ -2685,6 +2789,9 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         task = get_task(task_id)
         ctx.user_data["submitting_task_id"] = task_id
         
+        # Log task execution when user starts submission
+        add_task_execution(user.id, task_id, status="started")
+        
         lang = get_user_language(user.id)
         push_nav(ctx, "tasks")
         markup = InlineKeyboardMarkup([
@@ -2723,6 +2830,16 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
 
         task = get_task(sub["task_id"])
+        
+        # Update task execution history  
+        update_task_execution_by_task(
+            sub["user_id"],
+            sub["task_id"],
+            status=new_status,
+            submission_id=sub_id,
+            result_notes=f"Reviewed by admin on {datetime.now().isoformat()}"
+        )
+        
         admin_tag = f"@{query.from_user.username}" if query.from_user.username else query.from_user.first_name
 
         if action == "approve":
@@ -2828,6 +2945,16 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     update_user_username(user.id, user.username, user.first_name)
     
     sub_id = add_submission(user.id, task_id, proof_text, proof_file_id)
+    
+    # Update task execution history to mark as submitted
+    update_task_execution_by_task(
+        user.id,
+        task_id,
+        status="submitted",
+        submission_id=sub_id,
+        result_notes=f"Proof submitted: {len(proof_text)} chars, file={bool(proof_file_id)}"
+    )
+    
     ctx.user_data.pop("submitting_task_id", None)
     
     # 📊 Log task submission event
@@ -3282,7 +3409,14 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_manage_depts, pattern="^manage_depts$"))
     app.add_handler(CallbackQueryHandler(handle_leave_dept, pattern="^dept_leave_"))
     app.add_handler(CallbackQueryHandler(handle_add_more_depts, pattern="^dept_add_mode$"))
-    app.add_handler(CallbackQueryHandler(handle_tasks_category, pattern="^tasks_"))
+    
+    # Task pagination handlers (must be before general tasks_ handler)
+    app.add_handler(CallbackQueryHandler(handle_tasks_page_next, pattern="^tasks_page_next_"))
+    app.add_handler(CallbackQueryHandler(handle_tasks_page_prev, pattern="^tasks_page_prev_"))
+    
+    # Task category selection (easy/medium/hard)
+    app.add_handler(CallbackQueryHandler(handle_tasks_category, pattern="^tasks_(easy|medium|hard)$"))
+    
     app.add_handler(CallbackQueryHandler(handle_idea_anonymity_choice, pattern="^idea_(named|anon)$"))
     
     # Shop & other callbacks

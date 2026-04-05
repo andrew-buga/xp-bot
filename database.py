@@ -255,6 +255,23 @@ def init_db():
                 (title, description, xp, difficulty, dept_id)
             )
 
+    # ============ TASK_EXECUTIONS TABLE (Task History Tracking) ============
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS task_executions (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id      INTEGER NOT NULL,
+            user_id      INTEGER NOT NULL,
+            submission_id INTEGER,
+            status       TEXT DEFAULT 'started',
+            started_at   TEXT NOT NULL,
+            completed_at TEXT,
+            result_notes TEXT,
+            FOREIGN KEY(task_id) REFERENCES tasks(id),
+            FOREIGN KEY(user_id) REFERENCES users(user_id),
+            FOREIGN KEY(submission_id) REFERENCES submissions(id)
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -1318,7 +1335,92 @@ def get_approved_submissions():
     return [dict(row) for row in rows]
 
 
+# ============ TASK_EXECUTIONS (Task History Tracking) ============
+
+def add_task_execution(user_id, task_id, status="started", submission_id=None):
+    """Log when user starts or completes a task."""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO task_executions (task_id, user_id, submission_id, status, started_at)
+        VALUES (?, ?, ?, ?, ?)
+    """, (task_id, user_id, submission_id, status, datetime.now().isoformat()))
+    exec_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return exec_id
+
+
+def update_task_execution(execution_id, status, completed_at=None, result_notes=None):
+    """Update task execution status and completion info."""
+    conn = get_conn()
+    c = conn.cursor()
+    
+    if completed_at is None and status in ['completed', 'submitted', 'approved', 'rejected']:
+        completed_at = datetime.now().isoformat()
+    
+    c.execute("""
+        UPDATE task_executions
+        SET status=?, completed_at=?, result_notes=?
+        WHERE id=?
+    """, (status, completed_at, result_notes, execution_id))
+    
+    conn.commit()
+    conn.close()
+
+
+def get_task_execution_history(user_id, limit=100):
+    """Get user's task execution history."""
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        SELECT 
+            te.id, te.task_id, te.user_id, te.submission_id,
+            te.status, te.started_at, te.completed_at, te.result_notes,
+            t.title, t.xp_reward
+        FROM task_executions te
+        LEFT JOIN tasks t ON te.task_id = t.id
+        WHERE te.user_id=?
+        ORDER BY te.started_at DESC
+        LIMIT ?
+    """, (user_id, limit))
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def update_task_execution_by_task(user_id, task_id, status, submission_id=None, result_notes=None):
+    """Update the most recent execution for a specific task/user combination."""
+    conn = get_conn()
+    c = conn.cursor()
+    
+    # Find the most recent 'started' execution for this task
+    c.execute("""
+        SELECT id FROM task_executions
+        WHERE user_id=? AND task_id=? AND status='started'
+        ORDER BY started_at DESC
+        LIMIT 1
+    """, (user_id, task_id))
+    
+    row = c.fetchone()
+    if row:
+        exec_id = row['id']
+        completed_at = datetime.now().isoformat()
+        c.execute("""
+            UPDATE task_executions
+            SET status=?, completed_at=?, submission_id=?, result_notes=?
+            WHERE id=?
+        """, (status, completed_at, submission_id, result_notes, exec_id))
+        conn.commit()
+        conn.close()
+        return True
+    
+    conn.close()
+    return False
+
+
 def get_stats():
+
     conn = get_conn()
     c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM users")

@@ -1227,6 +1227,41 @@ def delete_task(task_id):
     conn.close()
 
 
+def update_task(task_id, title=None, description=None, xp_reward=None, difficulty_level=None, department_id=None):
+    """Update task fields."""
+    conn = get_conn()
+    c = conn.cursor()
+    
+    updates = []
+    params = []
+    
+    if title is not None:
+        updates.append("title=?")
+        params.append(title)
+    if description is not None:
+        updates.append("description=?")
+        params.append(description)
+    if xp_reward is not None:
+        updates.append("xp_reward=?")
+        params.append(xp_reward)
+    if difficulty_level is not None:
+        updates.append("difficulty_level=?")
+        params.append(difficulty_level)
+    if department_id is not None:
+        updates.append("department_id=?")
+        params.append(department_id)
+    
+    if not updates:
+        conn.close()
+        return
+    
+    params.append(task_id)
+    query = f"UPDATE tasks SET {', '.join(updates)} WHERE id=?"
+    c.execute(query, params)
+    conn.commit()
+    conn.close()
+
+
 # ============ SUBMISSIONS ----------
 
 def add_submission(user_id, task_id, proof_text, proof_file_id=None):

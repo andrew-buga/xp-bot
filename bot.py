@@ -2092,7 +2092,7 @@ def _render_edit_delete_dept_menu(action: str) -> tuple[str, InlineKeyboardMarku
     rows = []
     
     # Add button for all tasks
-    callback = f"a:edit_diff:0:" if action == "edit" else f"a:del_diff:0:"
+    callback = "a:edit_diff:0:" if action == "edit" else "a:del_diff:0:"
     rows.append([_btn("📋 Усі завдання", callback_data=callback)])
     
     # Add departments
@@ -2135,7 +2135,7 @@ def _render_edit_delete_difficulty_menu(action: str, dept_filter: str | None) ->
     rows.append([_btn("📚 Усі завдання", callback_data=all_callback)])
     
     # Back button
-    back_callback = f"a:edit_dept" if action == "edit" else "a:del_dept"
+    back_callback = "a:edit_dept" if action == "edit" else "a:del_dept"
     rows.append([_btn("⬅ Назад", callback_data=back_callback)])
     
     return "\n".join(lines), InlineKeyboardMarkup(rows)

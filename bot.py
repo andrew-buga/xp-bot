@@ -79,6 +79,7 @@ from database import (
     get_approved_submissions,
     add_task_execution,
     update_task_execution_by_task,
+    update_task,
 )
 
 
@@ -2288,16 +2289,71 @@ def _render_ideas_page(page: int, user_id: int, role: str) -> tuple[str, InlineK
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 
+async def _start_edit_task_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, task_id: int, field: str, page: int, dept_filter: str | None, difficulty: str | None):
+    """Start wizard for editing a specific task field."""
+    chat_id = update.effective_chat.id
+    
+    task = get_task(task_id)
+    if not task:
+        await _reply(update, "❌ Завдання не знайдено")
+        return
+    
+    ctx.user_data["edit_task_wizard"] = {
+        "type": "edit_task",
+        "field": field,
+        "task_id": task_id,
+        "page": page,
+        "dept_filter": dept_filter,
+        "difficulty": difficulty,
+        "step": field,
+        "bot_prompt_ids": [],
+    }
+    
+    if field == "title":
+        await _wizard_prompt(ctx, chat_id, f"✏️ Введи нову *назву*:\n\n_Поточна: {task['title']}_")
+    elif field == "description":
+        await _wizard_prompt(ctx, chat_id, f"✏️ Введи новий *опис*:\n\n_Поточний: {task['description']}_")
+    elif field == "xp":
+        await _wizard_prompt(ctx, chat_id, f"✏️ Введи новий *XP* (число > 0):\n\n_Поточний: {task['xp_reward']}_")
+    elif field == "difficulty":
+        # Show buttons for difficulty
+        await _cleanup_wizard_prompts(ctx, chat_id)
+        markup = InlineKeyboardMarkup([
+            [_btn("📗 Легкі", callback_data=f"wizard_edit_difficulty_easy_{task_id}_{page}_{dept_filter or ''}_{difficulty or ''}")],
+            [_btn("📙 Середні", callback_data=f"wizard_edit_difficulty_medium_{task_id}_{page}_{dept_filter or ''}_{difficulty or ''}")],
+            [_btn("📕 Важкі", callback_data=f"wizard_edit_difficulty_hard_{task_id}_{page}_{dept_filter or ''}_{difficulty or ''}")],
+            [_btn("⬅ Назад", callback_data=f"a:edit:{task_id}:{page}:{dept_filter or ''}:{difficulty or ''}")],
+        ])
+        msg = await ctx.bot.send_message(chat_id, "⚡ *Вибери нову складність:*", reply_markup=markup, parse_mode="Markdown")
+        ctx.user_data["edit_task_wizard"]["bot_prompt_ids"].append(msg.message_id)
+
+
 async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wizard_type: str):
     chat_id = update.effective_chat.id
     if wizard_type.startswith("add_task"):
         ctx.user_data["admin_wizard"] = {
             "type": "add_task",
-            "step": "title",
+            "step": "department",
             "payload": {},
             "bot_prompt_ids": [],
         }
-        await _wizard_prompt(ctx, chat_id, "📝 Введи *назву* завдання:")
+        # Show department selection
+        user = update.effective_user
+        admin_depts = get_user_departments(user.id)
+        
+        if not admin_depts:
+            await _reply(update, "❌ Ти не маєш обраних департаментів")
+            return
+        
+        all_depts = get_departments()
+        dept_buttons = []
+        for dept in all_depts:
+            if dept['id'] in admin_depts:
+                dept_buttons.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"wizard_department_{dept['id']}")])
+        
+        markup = InlineKeyboardMarkup(dept_buttons)
+        msg = await ctx.bot.send_message(chat_id, "🏢 *Крок 1: Вибери департамент:*", reply_markup=markup, parse_mode="Markdown")
+        ctx.user_data["admin_wizard"]["bot_prompt_ids"].append(msg.message_id)
         return
 
     if wizard_type.startswith("give_xp"):
@@ -2534,22 +2590,39 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         dept_filter = parts[4] if len(parts) > 4 else None
         difficulty = parts[5] if len(parts) > 5 else None
         
-        # For now, show a message that editing is coming soon
         task = get_task(task_id)
         if not task:
             await _query_answer(query, "Завдання не знайдено", show_alert=True)
             return
         
+        # Show edit menu
         text = (
             f"📝 *Завдання #{task_id}: {task['title']}*\n\n"
-            f"XP: {task['xp_reward']}\n"
-            f"Складність: {task['difficulty_level']}\n"
-            f"Опис: {task['description']}\n\n"
-            f"⚠️ _Редагування завдань через інтерфейс ще не реалізовано._\n"
-            f"_Для редагування використовуйте команди адміністратора._"
+            f"💎 XP: {task['xp_reward']}\n"
+            f"⚡ Складність: {task['difficulty_level']}\n"
+            f"📄 Опис: {task['description'][:100]}{'...' if len(task['description']) > 100 else ''}\n\n"
+            f"Що редагувати?"
         )
-        buttons = [[_btn("⬅ Назад", callback_data=f"a:edit_list:{page}:{dept_filter or ''}:{difficulty or ''}")]]
+        buttons = [
+            [_btn("📝 Назву", callback_data=f"a:edit_field:{task_id}:title:{page}:{dept_filter or ''}:{difficulty or ''}")],
+            [_btn("📄 Опис", callback_data=f"a:edit_field:{task_id}:description:{page}:{dept_filter or ''}:{difficulty or ''}")],
+            [_btn("💎 XP", callback_data=f"a:edit_field:{task_id}:xp:{page}:{dept_filter or ''}:{difficulty or ''}")],
+            [_btn("⚡ Складність", callback_data=f"a:edit_field:{task_id}:difficulty:{page}:{dept_filter or ''}:{difficulty or ''}")],
+            [_btn("⬅ Назад", callback_data=f"a:edit_list:{page}:{dept_filter or ''}:{difficulty or ''}")],
+        ]
         await _edit_message_text(query, text=text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
+        return
+
+    if data.startswith("a:edit_field:"):
+        parts = data.split(":")
+        task_id = int(parts[2])
+        field = parts[3]  # title, description, xp, difficulty
+        page = int(parts[4]) if len(parts) > 4 else 0
+        dept_filter = parts[5] if len(parts) > 5 else None
+        difficulty = parts[6] if len(parts) > 6 else None
+        
+        # Start edit wizard
+        await _start_edit_task_wizard(update, ctx, task_id, field, page, dept_filter, difficulty)
         return
 
     if data.startswith("a:del:"):
@@ -2911,36 +2984,10 @@ async def handle_wizard_callbacks(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         difficulty = data.split("_")[-1]  # easy, medium, hard
         wizard["payload"]["difficulty"] = difficulty
         
-        # Next: ask for department
-        user = query.from_user
-        admin_depts = get_user_departments(user.id)
-        
-        if not admin_depts:
-            await _reply(update, "❌ Ти не маєш обраних департаментів")
-            _clear_wizard(ctx)
-            return
-        
-        wizard["step"] = "department"
-        
-        if len(admin_depts) == 1:
-            # Auto-select if only one department
-            wizard["payload"]["department"] = admin_depts[0]
-            wizard["step"] = "xp"
-            await _cleanup_wizard_prompts(ctx, chat_id)
-            await _wizard_prompt(ctx, chat_id, "💎 Введи *XP* (ціле число > 0):")
-        else:
-            # Show department selection
-            await _cleanup_wizard_prompts(ctx, chat_id)
-            all_depts = get_departments()
-            dept_buttons = []
-            for dept in all_depts:
-                if dept['id'] in admin_depts:
-                    dept_buttons.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"wizard_department_{dept['id']}")])
-            
-            markup = InlineKeyboardMarkup(dept_buttons)
-            msg = await ctx.bot.send_message(chat_id, "📌 *Вибери департамент:*", reply_markup=markup, parse_mode="Markdown")
-            wizard["bot_prompt_ids"].append(msg.message_id)
-        
+        # Next: ask for title
+        wizard["step"] = "title"
+        await _cleanup_wizard_prompts(ctx, chat_id)
+        await _wizard_prompt(ctx, chat_id, "📝 *Крок 3: Введи назву* завдання:")
         return
     
     # Handle department selection in add_task wizard
@@ -2954,10 +3001,17 @@ async def handle_wizard_callbacks(update: Update, ctx: ContextTypes.DEFAULT_TYPE
             return
         
         wizard["payload"]["department"] = dept_id
-        wizard["step"] = "xp"
+        wizard["step"] = "difficulty"
         
+        # Show difficulty selection
         await _cleanup_wizard_prompts(ctx, chat_id)
-        await _wizard_prompt(ctx, chat_id, "💎 Введи *XP* (ціле число > 0):")
+        markup = InlineKeyboardMarkup([
+            [_btn("📗 Легкі", callback_data="wizard_difficulty_easy")],
+            [_btn("📙 Середні", callback_data="wizard_difficulty_medium")],
+            [_btn("📕 Важкі", callback_data="wizard_difficulty_hard")],
+        ])
+        msg = await ctx.bot.send_message(chat_id, "⚡ *Крок 2: Вибери складність:*", reply_markup=markup, parse_mode="Markdown")
+        wizard["bot_prompt_ids"].append(msg.message_id)
         return
     
     # Handle notification choice in add_task wizard
@@ -3008,6 +3062,27 @@ async def handle_wizard_callbacks(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         )
         
         await ctx.bot.send_message(chat_id=user_id, text=result_msg, parse_mode="Markdown")
+        return
+    
+    # Handle difficulty selection for edit_task
+    if data.startswith("wizard_edit_difficulty_"):
+        parts = data.split("_")
+        difficulty = parts[4]  # easy, medium, hard
+        task_id = int(parts[5])
+        page = int(parts[6]) if len(parts) > 6 else 0
+        dept_filter = parts[7] if len(parts) > 7 else None
+        difficulty_filter = parts[8] if len(parts) > 8 else None
+        
+        update_task(task_id, difficulty_level=difficulty)
+        
+        await _cleanup_wizard_prompts(ctx, chat_id)
+        _clear_wizard(ctx)
+        
+        await ctx.bot.send_message(
+            chat_id=query.from_user.id,
+            text=f"✅ Складність завдання #{task_id} оновлена на {difficulty}!",
+            parse_mode="Markdown"
+        )
         return
 
 
@@ -3497,22 +3572,13 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     return
                 wizard["payload"]["title"] = text
                 wizard["step"] = "description"
-                await _wizard_prompt(ctx, chat_id, "🧾 Введи *опис* завдання:")
+                await _wizard_prompt(ctx, chat_id, "📝 *Крок 4: Введи опис* завдання:")
                 return
 
             if wizard["step"] == "description":
                 wizard["payload"]["description"] = text
-                wizard["step"] = "difficulty"
-                
-                # Show difficulty selection buttons
-                await _cleanup_wizard_prompts(ctx, chat_id)
-                markup = InlineKeyboardMarkup([
-                    [_btn("📗 Легкі", callback_data="wizard_difficulty_easy")],
-                    [_btn("📙 Середні", callback_data="wizard_difficulty_medium")],
-                    [_btn("📕 Важкі", callback_data="wizard_difficulty_hard")],
-                ])
-                msg = await ctx.bot.send_message(chat_id, "⚙️ *Вибери складність:*", reply_markup=markup, parse_mode="Markdown")
-                wizard["bot_prompt_ids"].append(msg.message_id)
+                wizard["step"] = "xp"
+                await _wizard_prompt(ctx, chat_id, "💎 *Крок 5: Введи XP* (ціле число > 0):")
                 return
 
             if wizard["step"] == "xp":
@@ -3535,7 +3601,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ])
                 msg = await ctx.bot.send_message(
                     chat_id,
-                    "📢 *Розсилати повідомлення про нове завдання користувачам дельці?*",
+                    "📢 *Крок 6: Розсилати повідомлення про нове завдання користувачам дельці?*",
                     reply_markup=markup,
                     parse_mode="Markdown"
                 )
@@ -3695,6 +3761,50 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"✅ Оновлено: *{label}*.\nВикористай /bot_infoedit для інших змін.",
                 parse_mode="Markdown",
             )
+            return
+
+    # Handle edit_task_wizard (separate from admin_wizard)
+    edit_task_wizard = ctx.user_data.get("edit_task_wizard")
+    if user and user.id in ADMIN_IDS and edit_task_wizard:
+        chat_id = update.effective_chat.id
+        text = (update.message.text or "").strip()
+        lang = get_user_language(user.id)
+        
+        field = edit_task_wizard["field"]
+        task_id = edit_task_wizard["task_id"]
+        
+        if field == "title":
+            if not text:
+                await _wizard_prompt(ctx, chat_id, "❌ Назва не може бути порожньою. Введи назву:")
+                return
+            update_task(task_id, title=text)
+            await _cleanup_wizard_prompts(ctx, chat_id)
+            ctx.user_data.pop("edit_task_wizard", None)
+            page = edit_task_wizard["page"]
+            dept_filter = edit_task_wizard.get("dept_filter")
+            difficulty = edit_task_wizard.get("difficulty")
+            await _reply(update, f"✅ Назву завдання оновлено!", parse_mode="Markdown")
+            return
+        
+        elif field == "description":
+            update_task(task_id, description=text)
+            await _cleanup_wizard_prompts(ctx, chat_id)
+            ctx.user_data.pop("edit_task_wizard", None)
+            await _reply(update, f" ✅ Опис завдання оновлено!", parse_mode="Markdown")
+            return
+        
+        elif field == "xp":
+            try:
+                xp = int(text)
+                if xp <= 0:
+                    raise ValueError
+            except ValueError:
+                await _wizard_prompt(ctx, chat_id, get_message("error_xp_must_be_number", lang))
+                return
+            update_task(task_id, xp_reward=xp)
+            await _cleanup_wizard_prompts(ctx, chat_id)
+            ctx.user_data.pop("edit_task_wizard", None)
+            await _reply(update, f"✅ XP завдання оновлено!", parse_mode="Markdown")
             return
 
     await _process_proof(update, ctx)

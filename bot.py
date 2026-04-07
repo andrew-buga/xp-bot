@@ -974,8 +974,8 @@ def _admin_menu_markup(lang: str = "uk", dept_id: int | None = None) -> InlineKe
     return InlineKeyboardMarkup(
         [
             [_btn(get_message("admin_add_task_btn", lang), callback_data=f"a:add:{dept_id or 'g'}")],
-            [_btn(get_message("admin_edit_task_btn", lang), callback_data=f"a:edit_list:0:{f'd{dept_id}' if dept_id else 'g'}")],
-            [_btn(get_message("admin_delete_task_btn", lang), callback_data=f"a:dellist:0:{f'd{dept_id}' if dept_id else 'g'}")],
+            [_btn(get_message("admin_edit_task_btn", lang), callback_data="a:edit_dept")],
+            [_btn(get_message("admin_delete_task_btn", lang), callback_data="a:del_dept")],
             [_btn("📋 Перегляд завдань", callback_data="a:review_tasks:0")],
             [_btn(get_message("admin_users_btn", lang), callback_data="a:users:0")],
             [_btn(get_message("admin_ideas_btn", lang), callback_data=f"a:ideas:0:{f'd{dept_id}' if dept_id else 'g'}")],
@@ -2080,6 +2080,151 @@ def _render_task_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeybo
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 
+def _render_edit_delete_dept_menu(action: str) -> tuple[str, InlineKeyboardMarkup]:
+    """
+    Render department selection menu for edit/delete tasks.
+    action: 'edit' or 'delete'
+    """
+    departments = get_departments()
+    
+    header = "🏢 *Вибір департаменту для редагування*" if action == "edit" else "🏢 *Вибір департаменту для видалення*"
+    lines = [header, "", "Обери департамент або переглянь всі завдання:"]
+    rows = []
+    
+    # Add button for all tasks
+    callback = f"a:edit_diff:0:" if action == "edit" else f"a:del_diff:0:"
+    rows.append([_btn("📋 Усі завдання", callback_data=callback)])
+    
+    # Add departments
+    for dept in departments:
+        emoji = dept.get("emoji", "🏢")
+        dept_name = dept["name"]
+        dept_id = dept["id"]
+        dept_callback = f"a:edit_diff:0:d{dept_id}" if action == "edit" else f"a:del_diff:0:d{dept_id}"
+        rows.append([_btn(f"{emoji} {dept_name}", callback_data=dept_callback)])
+    
+    rows.append([_btn("⬅ В меню", callback_data="a:menu")])
+    
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
+def _render_edit_delete_difficulty_menu(action: str, dept_filter: str | None) -> tuple[str, InlineKeyboardMarkup]:
+    """
+    Render difficulty selection menu for edit/delete tasks.
+    action: 'edit' or 'delete'
+    dept_filter: None for all depts, or 'd{dept_id}' for specific dept
+    """
+    header = "⚡ *Вибір складності для редагування*" if action == "edit" else "⚡ *Вибір складності для видалення*"
+    lines = [header, "", "Обери рівень складності:"]
+    rows = []
+    
+    difficulties = {
+        "easy": ("Легкі завдання", "easy"),
+        "medium": ("Середні завдання", "medium"),
+        "hard": ("Важкі завдання", "hard"),
+    }
+    
+    # Main difficulty buttons
+    for diff_key, (diff_label, diff_value) in difficulties.items():
+        dept_part = f":{dept_filter}" if dept_filter else ":"
+        callback = f"a:edit_list:0{dept_part}:{diff_value}" if action == "edit" else f"a:dellist:0{dept_part}:{diff_value}"
+        rows.append([_btn(f"{diff_label}", callback_data=callback)])
+    
+    # All difficulties button
+    all_callback = f"a:edit_list:0{':' + dept_filter if dept_filter else ':'}" if action == "edit" else f"a:dellist:0{':' + dept_filter if dept_filter else ':'}"
+    rows.append([_btn("📚 Усі завдання", callback_data=all_callback)])
+    
+    # Back button
+    back_callback = f"a:edit_dept" if action == "edit" else "a:del_dept"
+    rows.append([_btn("⬅ Назад", callback_data=back_callback)])
+    
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
+def _render_filtered_task_page(
+    page: int, 
+    dept_filter: str | None = None, 
+    difficulty: str | None = None,
+    action: str = "delete"
+) -> tuple[str, InlineKeyboardMarkup]:
+    """
+    Render task page filtered by department and/or difficulty.
+    dept_filter: None for all depts, or 'd{dept_id}' for specific dept
+    difficulty: 'easy', 'medium', 'hard', or None for all
+    action: 'delete' or 'edit'
+    """
+    # Get all tasks
+    all_tasks = get_tasks()
+    
+    # Filter by department
+    if dept_filter and dept_filter.startswith("d"):
+        dept_id = int(dept_filter[1:])
+        filtered_tasks = [t for t in all_tasks if t["department_id"] == dept_id]
+        dept = get_department(dept_id)
+        dept_name = f"{dept['emoji']} {dept['name']}" if dept else "Unknown"
+    else:
+        filtered_tasks = all_tasks
+        dept_name = "Усі департаменти"
+    
+    # Filter by difficulty
+    if difficulty and difficulty in ("easy", "medium", "hard"):
+        filtered_tasks = [t for t in filtered_tasks if t["difficulty_level"] == difficulty]
+        diff_label = {"easy": "Легкі", "medium": "Середні", "hard": "Важкі"}.get(difficulty, "Невідомі")
+    else:
+        diff_label = "Усіх рівнів"
+    
+    # Pagination
+    total_pages = max(1, (len(filtered_tasks) + ADMIN_TASKS_PAGE_SIZE - 1) // ADMIN_TASKS_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * ADMIN_TASKS_PAGE_SIZE
+    chunk = filtered_tasks[start : start + ADMIN_TASKS_PAGE_SIZE]
+    
+    # Build header
+    action_label = "редагування" if action == "edit" else "видалення"
+    header = f"📋 *Завдання для {action_label}*\n{dept_name} — {diff_label}"
+    lines = [header, f"Сторінка {page + 1} з {total_pages}", ""]
+    rows = []
+    
+    if not chunk:
+        lines.append("Немає завдань за цими критеріями.")
+    else:
+        for task in chunk:
+            lines.append(f"#{task['id']} — {task['title']} ({task['xp_reward']} XP)")
+            
+            # Build callback with proper format: action:id:page:dept_filter:difficulty
+            if action == "edit":
+                callback_data = f"a:edit:{task['id']}:{page}:{dept_filter or ''}:{difficulty or ''}"
+            else:
+                callback_data = f"a:del:{task['id']}:{page}:{dept_filter or ''}:{difficulty or ''}"
+            
+            action_label_short = "Редагувати" if action == "edit" else "Видалити"
+            rows.append([_btn(f"{action_label_short} #{task['id']}", callback_data=callback_data)])
+    
+    # Navigation
+    nav = []
+    if page > 0:
+        if action == "edit":
+            nav_callback = f"a:edit_list:{page - 1}:{dept_filter or ''}:{difficulty or ''}"
+        else:
+            nav_callback = f"a:dellist:{page - 1}:{dept_filter or ''}:{difficulty or ''}"
+        nav.append(_btn("◀ Prev", callback_data=nav_callback))
+    if page < total_pages - 1:
+        if action == "edit":
+            nav_callback = f"a:edit_list:{page + 1}:{dept_filter or ''}:{difficulty or ''}"
+        else:
+            nav_callback = f"a:dellist:{page + 1}:{dept_filter or ''}:{difficulty or ''}"
+        nav.append(_btn("Next ▶", callback_data=nav_callback))
+    
+    if nav:
+        rows.append(nav)
+    
+    # Back button
+    back_callback = f"a:edit_diff:0:{dept_filter or ''}" if action == "edit" else f"a:del_diff:0:{dept_filter or ''}"
+    rows.append([_btn("⬅ Назад", callback_data=back_callback)])
+    
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
 def _render_ideas_page(page: int, user_id: int, role: str) -> tuple[str, InlineKeyboardMarkup]:
     """Render paginated list of ideas for admin review."""
     # Get unreviewed ideas filtered by role
@@ -2338,17 +2483,73 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         await _query_answer(query, "Майстер додавання запущено")
         return
 
-    if data.startswith("a:dellist:"):
-        page_str = data.split(":")[2] if len(data.split(":")) > 2 else "0"
-        dept_filter = data.split(":")[3] if len(data.split(":")) > 3 else None
-        page = int(page_str)
-        dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
-        
-        if dept_id:
-            text, markup = _render_task_page_by_dept(dept_id, page)
-        else:
-            text, markup = _render_task_page(page)
+    if data == "a:edit_dept":
+        text, markup = _render_edit_delete_dept_menu("edit")
         await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data == "a:del_dept":
+        text, markup = _render_edit_delete_dept_menu("delete")
+        await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data.startswith("a:edit_diff:"):
+        parts = data.split(":")
+        page = int(parts[2]) if len(parts) > 2 else 0
+        dept_filter = parts[3] if len(parts) > 3 else None
+        text, markup = _render_edit_delete_difficulty_menu("edit", dept_filter)
+        await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data.startswith("a:del_diff:"):
+        parts = data.split(":")
+        page = int(parts[2]) if len(parts) > 2 else 0
+        dept_filter = parts[3] if len(parts) > 3 else None
+        text, markup = _render_edit_delete_difficulty_menu("delete", dept_filter)
+        await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data.startswith("a:edit_list:"):
+        parts = data.split(":")
+        page = int(parts[2]) if len(parts) > 2 else 0
+        dept_filter = parts[3] if len(parts) > 3 and parts[3] else None
+        difficulty = parts[4] if len(parts) > 4 and parts[4] else None
+        text, markup = _render_filtered_task_page(page, dept_filter, difficulty, action="edit")
+        await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data.startswith("a:dellist:"):
+        parts = data.split(":")
+        page = int(parts[2]) if len(parts) > 2 else 0
+        dept_filter = parts[3] if len(parts) > 3 and parts[3] else None
+        difficulty = parts[4] if len(parts) > 4 and parts[4] else None
+        text, markup = _render_filtered_task_page(page, dept_filter, difficulty, action="delete")
+        await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+        return
+
+    if data.startswith("a:edit:"):
+        parts = data.split(":")
+        task_id = int(parts[2])
+        page = int(parts[3]) if len(parts) > 3 else 0
+        dept_filter = parts[4] if len(parts) > 4 else None
+        difficulty = parts[5] if len(parts) > 5 else None
+        
+        # For now, show a message that editing is coming soon
+        task = get_task(task_id)
+        if not task:
+            await _query_answer(query, "Завдання не знайдено", show_alert=True)
+            return
+        
+        text = (
+            f"📝 *Завдання #{task_id}: {task['title']}*\n\n"
+            f"XP: {task['xp_reward']}\n"
+            f"Складність: {task['difficulty_level']}\n"
+            f"Опис: {task['description']}\n\n"
+            f"⚠️ _Редагування завдань через інтерфейс ще не реалізовано._\n"
+            f"_Для редагування використовуйте команди адміністратора._"
+        )
+        buttons = [[_btn("⬅ Назад", callback_data=f"a:edit_list:{page}:{dept_filter or ''}:{difficulty or ''}")]]
+        await _edit_message_text(query, text=text, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="Markdown")
         return
 
     if data.startswith("a:del:"):
@@ -2356,15 +2557,12 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         task_id = int(parts[2])
         page = int(parts[3]) if len(parts) > 3 else 0
         dept_filter = parts[4] if len(parts) > 4 else None
-        dept_id = int(dept_filter[1:]) if dept_filter and dept_filter.startswith("d") else None
+        difficulty = parts[5] if len(parts) > 5 else None
         
         delete_task(task_id)
         
-        if dept_id:
-            text, markup = _render_task_page_by_dept(dept_id, page)
-        else:
-            text, markup = _render_task_page(page)
-        
+        # Render the task list again with same filters
+        text, markup = _render_filtered_task_page(page, dept_filter, difficulty, action="delete")
         await _edit_message_text(query, text=f"✅ Завдання #{task_id} деактивовано.\n\n{text}", reply_markup=markup, parse_mode="Markdown")
         return
 

@@ -2098,7 +2098,10 @@ def _render_edit_delete_dept_menu(action: str) -> tuple[str, InlineKeyboardMarku
     
     # Add departments
     for dept in departments:
-        emoji = dept.get("emoji", "🏢")
+        try:
+            emoji = dept["emoji"]
+        except (KeyError, TypeError):
+            emoji = "🏢"
         dept_name = dept["name"]
         dept_id = dept["id"]
         dept_callback = f"a:edit_diff:0:d{dept_id}" if action == "edit" else f"a:del_diff:0:d{dept_id}"
@@ -3048,7 +3051,11 @@ async def handle_wizard_callbacks(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         if wizard["payload"].get("department"):
             dept = get_department(wizard["payload"]["department"])
             if dept:
-                dept_text = f"\n🏢 Департамент: {dept.get('name', 'N/A')}"
+                try:
+                    dept_name = dept["name"]
+                except (KeyError, TypeError):
+                    dept_name = "N/A"
+                dept_text = f"\n🏢 Департамент: {dept_name}"
         
         notify_text = f"\n📢 Повідомлень надіслано: {sent_count}" if should_notify else ""
         
@@ -3865,8 +3872,16 @@ async def _notify_department_new_task(bot, dept_id: int, task_title: str, task_d
         
         # Get department name
         dept = get_department(dept_id)
-        dept_name = dept.get('name', f'Dept#{dept_id}') if dept else f'Dept#{dept_id}'
-        emoji = dept.get('emoji', '📌') if dept else '📌'
+        if dept:
+            try:
+                dept_name = dept['name']
+                emoji = dept['emoji']
+            except (KeyError, TypeError):
+                dept_name = f'Dept#{dept_id}'
+                emoji = '📌'
+        else:
+            dept_name = f'Dept#{dept_id}'
+            emoji = '📌'
         
         msg_text = (
             f"{emoji} *Нове завдання в {dept_name}!*\n\n"

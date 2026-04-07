@@ -2318,6 +2318,22 @@ async def _start_edit_task_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         await _wizard_prompt(ctx, chat_id, f"✏️ Введи новий *опис*:\n\n_Поточний: {task['description']}_")
     elif field == "xp":
         await _wizard_prompt(ctx, chat_id, f"✏️ Введи новий *XP* (число > 0):\n\n_Поточний: {task['xp_reward']}_")
+    elif field == "department":
+        # Show buttons for department selection
+        await _cleanup_wizard_prompts(ctx, chat_id)
+        all_depts = get_departments()
+        buttons = []
+        for dept in all_depts:
+            try:
+                emoji = dept['emoji']
+            except (KeyError, TypeError):
+                emoji = "🏢"
+            buttons.append([_btn(f"{emoji} {dept['name']}", callback_data=f"wizard_edit_department_{dept['id']}_{task_id}_{page}_{dept_filter or ''}_{difficulty or ''}")])
+        buttons.append([_btn("⬅ Назад", callback_data=f"a:edit:{task_id}:{page}:{dept_filter or ''}:{difficulty or ''}")])
+        
+        markup = InlineKeyboardMarkup(buttons)
+        msg = await ctx.bot.send_message(chat_id, "🏢 *Вибери новий департамент:*", reply_markup=markup, parse_mode="Markdown")
+        ctx.user_data["edit_task_wizard"]["bot_prompt_ids"].append(msg.message_id)
     elif field == "difficulty":
         # Show buttons for difficulty
         await _cleanup_wizard_prompts(ctx, chat_id)
@@ -2341,7 +2357,6 @@ async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wi
             "bot_prompt_ids": [],
         }
         # Show all departments (admin can add task to any department)
-        user = update.effective_user
         all_depts = get_departments()
         
         if not all_depts:
@@ -2596,15 +2611,27 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             await _query_answer(query, "Завдання не знайдено", show_alert=True)
             return
         
+        # Get department name
+        dept = get_department(task['department_id'])
+        if dept:
+            try:
+                dept_name = dept['name']
+            except (KeyError, TypeError):
+                dept_name = "N/A"
+        else:
+            dept_name = "N/A"
+        
         # Show edit menu
         text = (
             f"📝 *Завдання #{task_id}: {task['title']}*\n\n"
+            f"🏢 Департамент: {dept_name}\n"
             f"💎 XP: {task['xp_reward']}\n"
             f"⚡ Складність: {task['difficulty_level']}\n"
             f"📄 Опис: {task['description'][:100]}{'...' if len(task['description']) > 100 else ''}\n\n"
             f"Що редагувати?"
         )
         buttons = [
+            [_btn("🏢 Департамент", callback_data=f"a:edit_field:{task_id}:department:{page}:{dept_filter or ''}:{difficulty or ''}")],
             [_btn("📝 Назву", callback_data=f"a:edit_field:{task_id}:title:{page}:{dept_filter or ''}:{difficulty or ''}")],
             [_btn("📄 Опис", callback_data=f"a:edit_field:{task_id}:description:{page}:{dept_filter or ''}:{difficulty or ''}")],
             [_btn("💎 XP", callback_data=f"a:edit_field:{task_id}:xp:{page}:{dept_filter or ''}:{difficulty or ''}")],
@@ -3086,6 +3113,36 @@ async def handle_wizard_callbacks(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         await ctx.bot.send_message(
             chat_id=query.from_user.id,
             text=f"✅ Складність завдання #{task_id} оновлена на {difficulty}!",
+            parse_mode="Markdown"
+        )
+        return
+
+    if data.startswith("wizard_edit_department_"):
+        parts = data.split("_")
+        new_dept_id = int(parts[4])
+        task_id = int(parts[5])
+        _page = int(parts[6]) if len(parts) > 6 else 0
+        _dept_filter = parts[7] if len(parts) > 7 else None
+        _difficulty = parts[8] if len(parts) > 8 else None
+        
+        update_task(task_id, department_id=new_dept_id)
+        
+        await _cleanup_wizard_prompts(ctx, chat_id)
+        _clear_wizard(ctx)
+        
+        # Get new department name
+        dept = get_department(new_dept_id)
+        if dept:
+            try:
+                dept_name = dept['name']
+            except (KeyError, TypeError):
+                dept_name = "N/A"
+        else:
+            dept_name = "N/A"
+        
+        await ctx.bot.send_message(
+            chat_id=query.from_user.id,
+            text=f"✅ Завдання #{task_id} переведено до департаменту \"{dept_name}\"!",
             parse_mode="Markdown"
         )
         return

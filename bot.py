@@ -3069,9 +3069,9 @@ async def handle_wizard_callbacks(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         parts = data.split("_")
         difficulty = parts[4]  # easy, medium, hard
         task_id = int(parts[5])
-        page = int(parts[6]) if len(parts) > 6 else 0
-        dept_filter = parts[7] if len(parts) > 7 else None
-        difficulty_filter = parts[8] if len(parts) > 8 else None
+        _page = int(parts[6]) if len(parts) > 6 else 0
+        _dept_filter = parts[7] if len(parts) > 7 else None
+        _difficulty_filter = parts[8] if len(parts) > 8 else None
         
         update_task(task_id, difficulty_level=difficulty)
         
@@ -3780,17 +3780,17 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             update_task(task_id, title=text)
             await _cleanup_wizard_prompts(ctx, chat_id)
             ctx.user_data.pop("edit_task_wizard", None)
-            page = edit_task_wizard["page"]
-            dept_filter = edit_task_wizard.get("dept_filter")
-            difficulty = edit_task_wizard.get("difficulty")
-            await _reply(update, f"✅ Назву завдання оновлено!", parse_mode="Markdown")
+            _page = edit_task_wizard["page"]
+            _dept_filter = edit_task_wizard.get("dept_filter")
+            _difficulty = edit_task_wizard.get("difficulty")
+            await _reply(update, "✅ Назву завдання оновлено!", parse_mode="Markdown")
             return
         
         elif field == "description":
             update_task(task_id, description=text)
             await _cleanup_wizard_prompts(ctx, chat_id)
             ctx.user_data.pop("edit_task_wizard", None)
-            await _reply(update, f" ✅ Опис завдання оновлено!", parse_mode="Markdown")
+            await _reply(update, "✅ Опис завдання оновлено!", parse_mode="Markdown")
             return
         
         elif field == "xp":
@@ -3804,7 +3804,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             update_task(task_id, xp_reward=xp)
             await _cleanup_wizard_prompts(ctx, chat_id)
             ctx.user_data.pop("edit_task_wizard", None)
-            await _reply(update, f"✅ XP завдання оновлено!", parse_mode="Markdown")
+            await _reply(update, "✅ XP завдання оновлено!", parse_mode="Markdown")
             return
 
     await _process_proof(update, ctx)

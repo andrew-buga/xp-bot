@@ -10,7 +10,7 @@ MESSAGES = {
     "lang_select": {
         "en": "🌍 *Select language / Selectează limba / Виберіть мову:*",
         "ro": "🌍 *Select language / Selectează limba / Виберіть мову:*",
-        "uk": "🌍 *Абери мову / Selectează limba / Виберіть мову:*",
+        "uk": "🌍 *Обери мову / Selectează limba / Виберіть мову:*",
     },
     
     "lang_en_btn": {
@@ -40,7 +40,7 @@ MESSAGES = {
     "verify_subscribed": {
         "en": "✅ *Thank you! You're subscribed* 🎉\n\nNow select your department:",
         "ro": "✅ *Mulțumesc! Ești abonat* 🎉\n\nAcum selectează departamentul tău:",
-        "uk": "✅ *Спасибо! Ти підписаний* 🎉\n\nТепер обери свій департамент:",
+        "uk": "✅ *Дякую! Ти підписаний* 🎉\n\nТепер обери свій департамент:",
     },
     
     "verify_not_subscribed": {
@@ -627,7 +627,7 @@ MESSAGES = {
             "4️⃣ Send proof (screenshot or text)\n"
             "5️⃣ Admin verifies & awards XP\n\n"
             "📊 Check your rank: /xp\n"
-            "🏆 View leaderboard: /leaderboard"
+            "🏆 Top volunteers: /leaderboard"
         ),
         "ro": (
             "1️⃣ Vizualizează sarcini: /tasks\n"
@@ -636,7 +636,7 @@ MESSAGES = {
             "4️⃣ Trimite dovadă (captură sau text)\n"
             "5️⃣ Admin verifică și acordă XP\n\n"
             "📊 Verifică-ți rangul: /xp\n"
-            "🏆 Vezi clasamentul: /leaderboard"
+            "🏆 Top Voluntari: /leaderboard"
         ),
         "uk": (
             "1️⃣ Переглянь завдання: /tasks\n"
@@ -645,7 +645,7 @@ MESSAGES = {
             "4️⃣ Надішли підтвердження (скріншот або текст)\n"
             "5️⃣ Адмін перевірить і нарахує XP\n\n"
             "📊 Переглянь свій рейтинг: /xp\n"
-            "🏆 Топ учасників: /leaderboard"
+            "🏆 Топ волонтерів: /leaderboard"
         ),
     },
 
@@ -690,7 +690,7 @@ MESSAGES = {
             "🚀 *Getting started:*\n"
             "1. /start — register\n"
             "2. /tasks — view tasks\n"
-            "3. /leaderboard — top users\n\n"
+            "3. /leaderboard — top volunteers\n\n"
             "❓ Questions? Contact admin."
         ),
         "ro": (
@@ -703,7 +703,7 @@ MESSAGES = {
             "🚀 *Primii pași:*\n"
             "1. /start — înregistrare\n"
             "2. /tasks — vizualizează sarcini\n"
-            "3. /leaderboard — utilizatori top\n\n"
+            "3. /leaderboard — top voluntari\n\n"
             "❓ Întrebări? Contactează adminul."
         ),
         "uk": (
@@ -716,7 +716,7 @@ MESSAGES = {
             "🚀 *Як почати:*\n"
             "1. /start — реєстрація\n"
             "2. /tasks — список завдань\n"
-            "3. /leaderboard — топ учасників\n\n"
+            "3. /leaderboard — топ волонтерів\n\n"
             "❓ Питання? Зверніться до адміна."
         ),
     },
@@ -779,7 +779,7 @@ MESSAGES = {
     "admin_back_menu": {
         "en": "⬅ Back to Menu",
         "ro": "⬅ Înapoi la Meniu",
-        "uk": "⬅ В адмін-메뉴",
+        "uk": "⬅ Назад",
     },
     
     "admin_back": {
@@ -861,6 +861,218 @@ MESSAGES = {
             "• about/description у профілі бота\n"
             "• токен бота"
         ),
+    },
+    
+    # ========== DEPARTMENT & ADMIN FLOW ==========
+    "tasks_select_dept": {
+        "en": "📌 *Select department:*",
+        "ro": "📌 *Selectează departamentul:*",
+        "uk": "📌 *Вибери департамент:*",
+    },
+    
+    "tasks_no_dept_alert": {
+        "en": "❌ Select your department first via /start",
+        "ro": "❌ Selectează mai întâi departamentul tău prin /start",
+        "uk": "❌ Обери департамент через /start",
+    },
+    
+    "dept_select_alert": {
+        "en": "⚠️ Select at least one department!",
+        "ro": "⚠️ Selectează cel puțin un departament!",
+        "uk": "⚠️ Виберай хоча б один департамент!",
+    },
+    
+    "user_no_departments": {
+        "en": "_User does not belong to any department._",
+        "ro": "_Utilizatorul nu aparține unui departament._",
+        "uk": "_Користувач не належить до жодного департаменту._",
+    },
+    
+    "user_dept_roles_header": {
+        "en": "*Department roles:*",
+        "ro": "*Roluri în departamente:*",
+        "uk": "*Ролі в департаментах:*",
+    },
+    
+    "user_no_dept_roles": {
+        "en": "_No department roles._",
+        "ro": "_Nicio rolă în departamente._",
+        "uk": "_Немає ролей в департаментах._",
+    },
+    
+    "role_supervisor": {
+        "en": "Supervisor",
+        "ro": "Supervizor",
+        "uk": "Супервайзер",
+    },
+    
+    "role_coordinator": {
+        "en": "Coordinator",
+        "ro": "Coordonator",
+        "uk": "Координатор",
+    },
+    
+    "role_helper": {
+        "en": "Helper",
+        "ro": "Ajutant",
+        "uk": "Хелпер",
+    },
+    
+    "role_member": {
+        "en": "Member",
+        "ro": "Membru",
+        "uk": "Учасник",
+    },
+    
+    "role_unknown": {
+        "en": "Unknown",
+        "ro": "Necunoscut",
+        "uk": "Невідомо",
+    },
+    
+    "admin_edit_task_btn": {
+        "en": "✏️ Edit tasks",
+        "ro": "✏️ Editează sarcini",
+        "uk": "✏️ Редагувати завдання",
+    },
+    
+    "admin_delete_tasks_header": {
+        "en": "🗑 *Delete tasks*",
+        "ro": "🗑 *Șterge sarcini*",
+        "uk": "🗑 *Видалення завдань*",
+    },
+    
+    "admin_delete_tasks_dept_header": {
+        "en": "🗑 *Delete tasks ({dept_name})*",
+        "ro": "🗑 *Șterge sarcini ({dept_name})*",
+        "uk": "🗑 *Видалення завдань ({dept_name})*",
+    },
+    
+    "admin_delete_tasks_instruction": {
+        "en": "Click on a task to deactivate it.",
+        "ro": "Apasă pe o sarcină pentru a o dezactiva.",
+        "uk": "Натисни на завдання для деактивації.",
+    },
+    
+    "admin_users_all_btn": {
+        "en": "📊 All users",
+        "ro": "📊 Toți utilizatorii",
+        "uk": "📊 Всі користувачі",
+    },
+    
+    "admin_users_by_dept_label": {
+        "en": "📍 By departments:",
+        "ro": "📍 După departamente:",
+        "uk": "📍 За департаментами:",
+    },
+    
+    "admin_menu_btn": {
+        "en": "⬅ Menu",
+        "ro": "⬅ Meniu",
+        "uk": "⬅ В меню",
+    },
+    
+    "pagination_prev_btn": {
+        "en": "◀ Previous",
+        "ro": "◀ Anterior",
+        "uk": "◀ Попередня",
+    },
+    
+    "pagination_next_btn": {
+        "en": "Next ▶",
+        "ro": "Următor ▶",
+        "uk": "Наступна ▶",
+    },
+    
+    # ========== ERROR MESSAGES & VALIDATION ==========
+    "error_rate_limit": {
+        "en": "Too many requests. Try again in a few seconds.",
+        "ro": "Prea multe cereri. Încearcă din nou în câteva secunde.",
+        "uk": "Забагато запитів. Спробуй ще раз через кілька секунд.",
+    },
+    
+    "error_choice_failed": {
+        "en": "❌ Selection failed. Try again.",
+        "ro": "❌ Selecția a eșuat. Încearcă din nou.",
+        "uk": "❌ Помилка вибору. Спробуй ще раз.",
+    },
+    
+    "error_session_expired": {
+        "en": "❌ Session expired. Try /idea again.",
+        "ro": "❌ Sesiunea a expirat. Încearcă /idea din nou.",
+        "uk": "❌ Сесія експіровала. Спробуй /idea ще раз.",
+    },
+    
+    "tasks_none_for_difficulty": {
+        "en": "😕 Sorry, no tasks at this difficulty level yet.\n\nTry another level!",
+        "ro": "😕 Ne pare rău, nu sunt sarcini la acest nivel de dificultate.\n\nÎncearcă un alt nivel!",
+        "uk": "😕 На жаль, завдань цього рівня немає.\n\nСпробуй інший рівень!",
+    },
+    
+    "error_xp_calculation": {
+        "en": "⚠️ Error calculating XP. Try again.",
+        "ro": "⚠️ Eroare la calcularea XP. Încearcă din nou.",
+        "uk": "⚠️ Помилка при нарахуванні XP. Спробуй ще раз.",
+    },
+    
+    "error_submission_failed": {
+        "en": "Try again! /tasks",
+        "ro": "Încearcă din nou! /tasks",
+        "uk": "Спробуй ще раз! /tasks",
+    },
+    
+    "error_empty_message": {
+        "en": "❌ Message cannot be empty. Try again:",
+        "ro": "❌ Mesajul nu poate fi gol. Încearcă din nou:",
+        "uk": "❌ Повідомлення не може бути порожнім. Спробуй ще раз:",
+    },
+    
+    "error_send_failed": {
+        "en": "❌ Send error. Try later.",
+        "ro": "❌ Eroare la trimitere. Încearcă mai târziu.",
+        "uk": "❌ Помилка при відправці. Спробуй пізніше.",
+    },
+    
+    "error_xp_must_be_number": {
+        "en": "❌ XP must be a whole number > 0. Try again:",
+        "ro": "❌ XP trebuie să fie un număr întreg > 0. Încearcă din nou:",
+        "uk": "❌ XP має бути цілим числом > 0. Спробуй ще раз:",
+    },
+    
+    "error_user_id_must_be_number": {
+        "en": "❌ User ID must be a number. Try again:",
+        "ro": "❌ ID-ul utilizatorului trebuie să fie un număr. Încearcă din nou:",
+        "uk": "❌ User ID має бути числом. Спробуй ще раз:",
+    },
+    
+    "error_xp_cannot_be_zero": {
+        "en": "❌ XP must be a number and not 0. Try again:",
+        "ro": "❌ XP trebuie să fie un număr și nu 0. Încearcă din nou:",
+        "uk": "❌ XP має бути числом і не 0. Спробуй ще раз:",
+    },
+    
+    "error_price_must_be_number": {
+        "en": "❌ Price must be a whole number > 0. Try again:",
+        "ro": "❌ Prețul trebuie să fie un număr întreg > 0. Încearcă din nou:",
+        "uk": "❌ Ціна має бути цілим числом > 0. Спробуй ще раз:",
+    },
+    
+    "error_price_invalid_decimal": {
+        "en": "❌ Price must be a whole number > 0 or '.'. Try again:",
+        "ro": "❌ Prețul trebuie să fie un număr întreg > 0 sau '.'. Încearcă din nou:",
+        "uk": "❌ Ціна має бути цілим числом > 0 або «.». Спробуй ще раз:",
+    },
+    
+    "error_text_cannot_be_empty": {
+        "en": "❌ Text cannot be empty. Try again:",
+        "ro": "❌ Textul nu poate fi gol. Încearcă din nou:",
+        "uk": "❌ Текст не може бути порожнім. Спробуй ще раз:",
+    },
+    
+    "error_generic": {
+        "en": "Something went wrong. Try again or write /help for help.",
+        "ro": "Ceva nu a funcționat. Încearcă din nou sau scrie /help pentru ajutor.",
+        "uk": "Щось пішло не так. Спробуй ще раз або напиши /help для довідки.",
     },
     
     "back_btn": {

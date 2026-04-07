@@ -78,8 +78,6 @@ from database import (
     get_pending_submissions,
     get_approved_submissions,
     add_task_execution,
-    update_task_execution,
-    get_task_execution_history,
     update_task_execution_by_task,
 )
 
@@ -258,7 +256,7 @@ async def _send_rate_limit_notice(update: Update) -> None:
         return
 
     _user_notice_ts[user.id] = now
-    text = "Забагато запитів. Спробуй ще раз через кілька секунд."
+    text = get_message("error_rate_limit", "uk")
 
     if update.callback_query:
         try:
@@ -366,7 +364,7 @@ def requires_dept_and_verified(func):
         user_depts = get_user_departments(user.id)
         if not user_depts:
             await _reply(update, 
-                "❌ Спочатку обери свій департамент. Напиши /start",
+                get_message("tasks_no_dept", lang),
                 parse_mode="Markdown")
             return
         
@@ -633,7 +631,7 @@ async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_
         try:
             dept_id = int(data.split("_")[2])
         except (IndexError, ValueError):
-            await _query_answer(query, "❌ Помилка вибору. Спробуй ще раз.", show_alert=True)
+            await _query_answer(query, get_message("error_choice_failed", lang), show_alert=True)
             return
         
         if dept_id in selected:
@@ -665,7 +663,7 @@ async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_
     # Handle Done button
     if data == "dept_done" or data == "dept_add_done":
         if not selected:
-            await _query_answer(query, "⚠️ Виберай хоча б один департамент!", show_alert=True)
+            await _query_answer(query, get_message("dept_select_alert", lang), show_alert=True)
             return
         
         # Save all selected departments
@@ -830,7 +828,7 @@ async def handle_idea_anonymity_choice(update: Update, ctx: ContextTypes.DEFAULT
     
     # Check if idea draft exists
     if "idea_draft" not in ctx.user_data:
-        await _query_answer(query, "❌ Сесія експіровала. Спробуй /idea ще раз.", show_alert=True)
+        await _query_answer(query, get_message("error_session_expired", lang), show_alert=True)
         return
     
     draft = ctx.user_data["idea_draft"]
@@ -976,6 +974,7 @@ def _admin_menu_markup(lang: str = "uk", dept_id: int | None = None) -> InlineKe
     return InlineKeyboardMarkup(
         [
             [_btn(get_message("admin_add_task_btn", lang), callback_data=f"a:add:{dept_id or 'g'}")],
+            [_btn(get_message("admin_edit_task_btn", lang), callback_data=f"a:edit_list:0:{f'd{dept_id}' if dept_id else 'g'}")],
             [_btn(get_message("admin_delete_task_btn", lang), callback_data=f"a:dellist:0:{f'd{dept_id}' if dept_id else 'g'}")],
             [_btn("📋 Перегляд завдань", callback_data="a:review_tasks:0")],
             [_btn(get_message("admin_users_btn", lang), callback_data="a:users:0")],
@@ -1064,7 +1063,9 @@ def pop_nav(ctx: ContextTypes.DEFAULT_TYPE) -> str | None:
 
 async def go_back(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Navigate back to previous screen or menu"""
-    prev_screen = pop_nav(ctx)
+    # Pop twice: once to remove current screen, once to get the previous one
+    pop_nav(ctx)  # Remove current screen from stack
+    prev_screen = pop_nav(ctx)  # Get previous screen
     
     if prev_screen is None:
         # No history, go to menu
@@ -1333,7 +1334,8 @@ async def cmd_admin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @rate_limit_user
 async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Show task categories (Easy/Medium/Hard) for user to select."""
+    """Show task categories (Easy/Medium/Hard) for user to select.
+    If user has multiple departments, show department selection first."""
     user = update.effective_user
     register_user(user)
     
@@ -1343,7 +1345,29 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _reply(update, get_message("dept_required", lang))
         return
     
-    push_nav(ctx, "menu")
+    push_nav(ctx, "tasks")
+    
+    # If user has multiple departments, show department selection
+    if len(user_depts) > 1:
+        all_depts = get_departments()
+        dept_buttons = []
+        for dept in all_depts:
+            if dept['id'] in user_depts:
+                dept_buttons.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"task_dept_select_{dept['id']}")])
+        
+        # Add back button
+        dept_buttons.append([_btn(get_message("back_btn", lang), callback_data="go_back")])
+        
+        markup = InlineKeyboardMarkup(dept_buttons)
+        await _reply(update,
+            get_message("tasks_select_dept", lang),
+            reply_markup=markup,
+            parse_mode="Markdown")
+        return
+    
+    # If user has only one department, skip to difficulty selection
+    ctx.user_data["selected_task_dept"] = user_depts[0]
+    
     # Show category menu
     markup = InlineKeyboardMarkup([
         [_btn(get_message("tasks_easy_btn", lang), callback_data="tasks_easy")],
@@ -1358,6 +1382,38 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown")
 
 
+async def handle_task_dept_select(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle department selection for tasks."""
+    query = update.callback_query
+    await _query_answer(query)
+    
+    user = query.from_user
+    data = query.data
+    
+    # Extract department ID (format: "task_dept_select_{dept_id}")
+    try:
+        dept_id = int(data.split("_")[-1])
+    except (ValueError, IndexError):
+        return
+    
+    # Store selected department
+    ctx.user_data["selected_task_dept"] = dept_id
+    
+    # Show difficulty selection
+    lang = get_user_language(user.id)
+    markup = InlineKeyboardMarkup([
+        [_btn(get_message("tasks_easy_btn", lang), callback_data="tasks_easy")],
+        [_btn(get_message("tasks_medium_btn", lang), callback_data="tasks_medium")],
+        [_btn(get_message("tasks_hard_btn", lang), callback_data="tasks_hard")],
+        [_btn(get_message("back_btn", lang), callback_data="go_back")],
+    ])
+    
+    await _edit_message_text(query,
+        get_message("tasks_select_difficulty", lang),
+        reply_markup=markup,
+        parse_mode="Markdown")
+
+
 async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle task category selection and initialize pagination."""
     query = update.callback_query
@@ -1365,6 +1421,9 @@ async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     user = query.from_user
     data = query.data
+    
+    # Get user language preference
+    lang = get_user_language(user.id)
     
     # Extract difficulty level
     difficulty_map = {
@@ -1379,8 +1438,12 @@ async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     user_depts = get_user_departments(user.id)
     if not user_depts:
-        await _query_answer(query, "❌ Обери департамент через /start", show_alert=True)
+        await _query_answer(query, get_message("tasks_no_dept_alert", lang), show_alert=True)
         return
+    
+    # If user selected a specific department earlier, use it. Otherwise use primary.
+    if "selected_task_dept" not in ctx.user_data:
+        ctx.user_data["selected_task_dept"] = user_depts[0]
     
     # Reset pagination for this difficulty
     ctx.user_data[f"tasks_page_{difficulty}"] = 0
@@ -1389,8 +1452,8 @@ async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await display_tasks_page(update, ctx, difficulty)
 
 
-async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, difficulty: str):
-    """Display paginated tasks - delete old nav on page change."""
+async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, difficulty: str, edit_nav_only: bool = False):
+    """Display paginated tasks. If edit_nav_only=True, only edit nav message (for pagination)."""
     TASKS_PER_PAGE = 3
     
     # Get user object from either update or callback_query
@@ -1401,18 +1464,21 @@ async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, dif
         user = update.effective_user
         query = None
     
+    # Get user language preference
+    lang = get_user_language(user.id)
+    
     user_depts = get_user_departments(user.id)
     if not user_depts:
         if query:
             await _query_answer(query, "❌ Обери департамент", show_alert=True)
         return
     
-    # Get filtered tasks for primary department
-    user_dept_id = user_depts[0]
+    # Use selected department if available, otherwise use primary
+    user_dept_id = ctx.user_data.get("selected_task_dept", user_depts[0])
     all_tasks = get_tasks_filtered(difficulty, user_dept_id)
     
     if not all_tasks:
-        msg = f"😕 На жаль, завдань рівня «{difficulty}» немає.\n\nСпробуй інший рівень складності!"
+        msg = get_message("tasks_none_for_difficulty", lang)
         markup = InlineKeyboardMarkup([
             [_btn("📗 Легкі", callback_data="tasks_easy")],
             [_btn("📙 Середні", callback_data="tasks_medium")],
@@ -1434,22 +1500,33 @@ async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, dif
         current_page = max(0, total_pages - 1)
         ctx.user_data[f"tasks_page_{difficulty}"] = current_page
     
+    # If edit_nav_only=True, only update navigation message (for pagination)
+    if edit_nav_only and query:
+        if total_pages > 1:
+            nav_buttons = []
+            if current_page > 0:
+                nav_buttons.append(_btn("◀ Попередня", callback_data=f"tasks_page_prev_{difficulty}"))
+            if current_page < total_pages - 1:
+                nav_buttons.append(_btn("Наступна ▶", callback_data=f"tasks_page_next_{difficulty}"))
+            nav_buttons.append(_btn("Категорії", callback_data="go_back"))
+            nav_text = f"⬇️ Навігація (сторінка {current_page + 1}/{total_pages}):"
+            markup = InlineKeyboardMarkup([nav_buttons])
+            await _edit_message_text(query, nav_text, reply_markup=markup)
+        return
+    
     # Get tasks for this page
     start_idx = current_page * TASKS_PER_PAGE
     end_idx = start_idx + TASKS_PER_PAGE
     page_tasks = all_tasks[start_idx:end_idx]
     
-    # Delete old nav message if pagination
-    if query:
-        try:
-            await query.delete_message()
-        except Exception:
-            pass
-    
     # Build and send header
-    cat_names = {"easy": "Легкі", "medium": "Середні", "hard": "Важкі"}
+    cat_names_en = {"easy": "Easy", "medium": "Medium", "hard": "Hard"}
+    cat_names_ro = {"easy": "Ușor", "medium": "Mediu", "hard": "Dificil"}
+    cat_names_uk = {"easy": "Легкі", "medium": "Середні", "hard": "Важкі"}
+    cat_names = {"en": cat_names_en, "ro": cat_names_ro, "uk": cat_names_uk}
+    
     header = (
-        f"📋 *{cat_names[difficulty]} завдання*\n"
+        f"📋 *{cat_names[lang][difficulty]} завдання*\n"
         f"Сторінка *{current_page + 1}* з *{total_pages}*\n"
         f"(Показано {len(page_tasks)} з {len(all_tasks)} завдань)"
     )
@@ -1474,11 +1551,11 @@ async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, dif
         )
         
         if done:
-            btn = _btn("✅ Виконано", callback_data="noop")
+            btn = _btn(get_message("task_done_btn", lang), callback_data="noop")
         elif pending:
-            btn = _btn("⏳ На перевірці", callback_data="noop")
+            btn = _btn(get_message("task_pending_btn", lang), callback_data="noop")
         else:
-            btn = _btn("📤 Здати завдання", callback_data=f"submit_{task['id']}")
+            btn = _btn(get_message("task_submit_btn", lang), callback_data=f"submit_{task['id']}")
         
         await _reply(update, text, 
                     reply_markup=InlineKeyboardMarkup([[btn]]),
@@ -1489,10 +1566,10 @@ async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, dif
         nav_buttons = []
         
         if current_page > 0:
-            nav_buttons.append(_btn("◀ Попереднія", callback_data=f"tasks_page_prev_{difficulty}"))
+            nav_buttons.append(_btn(get_message("pagination_prev_btn", lang), callback_data=f"tasks_page_prev_{difficulty}"))
         
         if current_page < total_pages - 1:
-            nav_buttons.append(_btn("Наступна ▶", callback_data=f"tasks_page_next_{difficulty}"))
+            nav_buttons.append(_btn(get_message("pagination_next_btn", lang), callback_data=f"tasks_page_next_{difficulty}"))
         
         nav_buttons.append(_btn("Категорії", callback_data="go_back"))
         
@@ -1505,7 +1582,7 @@ async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, dif
 
 
 async def handle_tasks_page_next(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Handle next page button for tasks."""
+    """Handle next page button for tasks - only update navigation message."""
     query = update.callback_query
     await _query_answer(query)
     
@@ -1516,11 +1593,12 @@ async def handle_tasks_page_next(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     current_page = ctx.user_data.get(f"tasks_page_{difficulty}", 0)
     ctx.user_data[f"tasks_page_{difficulty}"] = current_page + 1
     
-    await display_tasks_page(update, ctx, difficulty)
+    # Only edit navigation message, don't send new task messages
+    await display_tasks_page(update, ctx, difficulty, edit_nav_only=True)
 
 
 async def handle_tasks_page_prev(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Handle previous page button for tasks."""
+    """Handle previous page button for tasks - only update navigation message."""
     query = update.callback_query
     await _query_answer(query)
     
@@ -1531,7 +1609,8 @@ async def handle_tasks_page_prev(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     current_page = ctx.user_data.get(f"tasks_page_{difficulty}", 0)
     ctx.user_data[f"tasks_page_{difficulty}"] = max(0, current_page - 1)
     
-    await display_tasks_page(update, ctx, difficulty)
+    # Only edit navigation message, don't send new task messages
+    await display_tasks_page(update, ctx, difficulty, edit_nav_only=True)
 
 
 
@@ -1688,7 +1767,7 @@ def _render_task_page(page: int) -> tuple[str, InlineKeyboardMarkup]:
     start = page * ADMIN_TASKS_PAGE_SIZE
     chunk = tasks[start : start + ADMIN_TASKS_PAGE_SIZE]
 
-    lines = ["🗑 *Видалення завдань*", "Натисни на завдання для деактивації.", ""]
+    lines = [get_message("admin_delete_tasks_header", "uk"), get_message("admin_delete_tasks_instruction", "uk"), ""]
     rows = []
 
     for task in chunk:
@@ -1726,16 +1805,16 @@ def _render_users_filter_menu() -> tuple[str, InlineKeyboardMarkup]:
     rows = []
     
     # All users button
-    rows.append([_btn("📊 Всі користувачі", callback_data="a:users:0:all")])
+    rows.append([_btn(get_message("admin_users_all_btn", "uk"), callback_data="a:users:0:all")])
     
     # Separator
-    rows.append([_btn("📍 За департаментами:", callback_data="noop")])
+    rows.append([_btn(get_message("admin_users_by_dept_label", "uk"), callback_data="noop")])
     
     # Department buttons
     for dept in departments:
         rows.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"a:users:0:d{dept['id']}")])
     
-    rows.append([_btn("⬅ В меню", callback_data="a:menu")])
+    rows.append([_btn(get_message("admin_menu_btn", "uk"), callback_data="a:menu")])
     
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
@@ -1785,7 +1864,7 @@ def _select_user_dept_for_role(target_user_id: int, page: int, back_callback: st
     lines = [
         f"👤 *Редагування ролей {_display_name(user)}*",
         "",
-        "Выберіть департамент для редагування ролі:",
+        "Обери департамент для редагування ролі:",
     ]
     
     rows = []
@@ -1796,9 +1875,9 @@ def _select_user_dept_for_role(target_user_id: int, page: int, back_callback: st
             role_emoji = {"supervisor": "📋", "coordinator": "⭐", "helper": "🌱", "member": "👤"}.get(dept_role, "👤")
             rows.append([_btn(f"{dept['emoji']} {dept['name']} {role_emoji}", callback_data=f"a:ud:{target_user_id}:{page}:d{dept_id}")])
     else:
-        lines.append("_Користувач не належить до жодного департаменту._")
+        lines.append(get_message("user_no_departments", "uk"))
     
-    rows.append([_btn("⬅ Назад", callback_data=back_callback)])
+    rows.append([_btn(get_message("back_btn", "uk"), callback_data=back_callback)])
     
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
@@ -1844,20 +1923,16 @@ def _render_user_detail(target_user_id: int, page: int, admin_user_id: int | Non
     # Show department roles
     dept_roles = get_user_all_dept_roles(target_user_id)
     if dept_roles:
-        lines.append("*Ролі в департаментах:*")
+        lines.append(get_message("user_dept_roles_header", "uk"))
         for d_id in sorted(dept_roles.keys()):
             d_role = dept_roles[d_id]
             dept = get_department(d_id)
             role_emoji = {"supervisor": "📋", "coordinator": "⭐", "helper": "🌱", "member": "👤"}.get(d_role, "❓")
-            role_text = {
-                "supervisor": "Супервайзер",
-                "coordinator": "Координатор",
-                "helper": "Хелпер",
-                "member": "Учасник"
-            }.get(d_role, "Невідомо")
+            role_key = {"supervisor": "role_supervisor", "coordinator": "role_coordinator", "helper": "role_helper", "member": "role_member"}.get(d_role)
+            role_text = get_message(role_key, "uk") if role_key else get_message("role_unknown", "uk")
             lines.append(f"  {dept['emoji']} {dept['name']}: {role_emoji} {role_text}")
     else:
-        lines.append("_Немає ролей в департаментах._")
+        lines.append(get_message("user_no_dept_roles", "uk"))
 
     rows = []
     
@@ -1976,9 +2051,10 @@ def _render_task_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeybo
     chunk = dept_tasks[start : start + ADMIN_TASKS_PAGE_SIZE]
 
     dept = get_department(dept_id)
-    dept_name = f"{dept['emoji']} {dept['name']}" if dept else "Невідомий відділ"
+    dept_name = f"{dept['emoji']} {dept['name']}" if dept else "Unknown Department"
     
-    lines = [f"🗑 *Видалення завдань ({dept_name})*", "Натисни на завдання для деактивації.", ""]
+    header = get_message("admin_delete_tasks_dept_header", "uk", dept_name=dept_name)
+    lines = [header, get_message("admin_delete_tasks_instruction", "uk"), ""]
     rows = []
 
     for task in chunk:
@@ -2617,6 +2693,126 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         return
 
 
+async def handle_wizard_callbacks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Handle wizard step callbacks (difficulty, department selection, etc)."""
+    query = update.callback_query
+    await _query_answer(query)
+    data = query.data
+    
+    wizard = _wizard(ctx)
+    if not wizard:
+        return
+    
+    chat_id = update.effective_chat.id
+    
+    # Handle difficulty selection in add_task wizard
+    if data.startswith("wizard_difficulty_"):
+        if wizard["type"] != "add_task" or wizard["step"] != "difficulty":
+            return
+        
+        difficulty = data.split("_")[-1]  # easy, medium, hard
+        wizard["payload"]["difficulty"] = difficulty
+        
+        # Next: ask for department
+        user = query.from_user
+        admin_depts = get_user_departments(user.id)
+        
+        if not admin_depts:
+            await _reply(update, "❌ Ти не маєш обраних департаментів")
+            _clear_wizard(ctx)
+            return
+        
+        wizard["step"] = "department"
+        
+        if len(admin_depts) == 1:
+            # Auto-select if only one department
+            wizard["payload"]["department"] = admin_depts[0]
+            wizard["step"] = "xp"
+            await _cleanup_wizard_prompts(ctx, chat_id)
+            await _wizard_prompt(ctx, chat_id, "💎 Введи *XP* (ціле число > 0):")
+        else:
+            # Show department selection
+            await _cleanup_wizard_prompts(ctx, chat_id)
+            all_depts = get_departments()
+            dept_buttons = []
+            for dept in all_depts:
+                if dept['id'] in admin_depts:
+                    dept_buttons.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"wizard_department_{dept['id']}")])
+            
+            markup = InlineKeyboardMarkup(dept_buttons)
+            msg = await ctx.bot.send_message(chat_id, "📌 *Вибери департамент:*", reply_markup=markup, parse_mode="Markdown")
+            wizard["bot_prompt_ids"].append(msg.message_id)
+        
+        return
+    
+    # Handle department selection in add_task wizard
+    if data.startswith("wizard_department_"):
+        if wizard["type"] != "add_task" or wizard["step"] != "department":
+            return
+        
+        try:
+            dept_id = int(data.split("_")[-1])
+        except (ValueError, IndexError):
+            return
+        
+        wizard["payload"]["department"] = dept_id
+        wizard["step"] = "xp"
+        
+        await _cleanup_wizard_prompts(ctx, chat_id)
+        await _wizard_prompt(ctx, chat_id, "💎 Введи *XP* (ціле число > 0):")
+        return
+    
+    # Handle notification choice in add_task wizard
+    if data.startswith("wizard_notify_"):
+        if wizard["type"] != "add_task" or wizard["step"] != "notify":
+            return
+        
+        should_notify = data == "wizard_notify_yes"
+        user_id = query.from_user.id
+        
+        # Create the task
+        task_id = add_task(
+            wizard["payload"]["title"],
+            wizard["payload"].get("description", ""),
+            wizard["payload"]["xp"],
+            difficulty_level=wizard["payload"].get("difficulty", "easy"),
+            department_id=wizard["payload"].get("department"),
+        )
+        
+        # Send notification if requested
+        sent_count = 0
+        if should_notify and wizard["payload"].get("department"):
+            sent_count = await _notify_department_new_task(
+                ctx.bot,
+                wizard["payload"]["department"],
+                wizard["payload"]["title"],
+                wizard["payload"].get("description", "")
+            )
+        
+        await _cleanup_wizard_prompts(ctx, chat_id)
+        _clear_wizard(ctx)
+        
+        dept_text = ""
+        if wizard["payload"].get("department"):
+            dept = get_department(wizard["payload"]["department"])
+            if dept:
+                dept_text = f"\n🏢 Департамент: {dept.get('name', 'N/A')}"
+        
+        notify_text = f"\n📢 Повідомлень надіслано: {sent_count}" if should_notify else ""
+        
+        result_msg = (
+            "✅ *Завдання додано*\n\n"
+            f"ID: `{task_id}`\n"
+            f"Назва: {wizard['payload']['title']}\n"
+            f"Опис: {wizard['payload'].get('description', '-')}\n"
+            f"Складність: {wizard['payload'].get('difficulty', 'easy')}\n"
+            f"XP: {wizard['payload']['xp']}{dept_text}{notify_text}"
+        )
+        
+        await ctx.bot.send_message(chat_id=user_id, text=result_msg, parse_mode="Markdown")
+        return
+
+
 @rate_limit_user
 async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -2813,6 +3009,9 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         action, sub_id_str = data.split("_", 1)
         sub_id = int(sub_id_str)
         sub = get_submission(sub_id)
+        
+        # Get admin's language
+        lang = get_user_language(query.from_user.id)
 
         if not sub:
             await _query_answer(query, "❌ Заявку не знайдено.", show_alert=True)
@@ -2853,7 +3052,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             
             if not xp_success:
                 logger.error(f"❌ Failed to award XP for submission {sub_id}")
-                await _query_answer(query, "⚠️ Помилка при нарахуванні XP. Спробуй ще раз.", show_alert=True)
+                await _query_answer(query, get_message("error_xp_calculation", lang), show_alert=True)
                 return
             
             # 📊 Log task approval and XP award events
@@ -2885,10 +3084,11 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             })
             
             result_icon = "❌ Відхилено"
+            user_lang = get_user_language(sub["user_id"])
             user_msg = (
                 f"❌ *Завдання не прийнято*\n\n"
                 f"«{task['title']}» — відхилено.\n"
-                f"Спробуй ще раз! /tasks"
+                f"{get_message('error_submission_failed', user_lang)}"
             )
 
         try:
@@ -3036,7 +3236,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
         if not message_text:
             lang = ctx.user_data.get("support_lang", "en")
-            await _reply(update, "❌ Повідомлення не може бути порожнім. Спробуй ще раз:")
+            await _reply(update, get_message("error_empty_message", lang))
             return
         
         lang = ctx.user_data.get("support_lang", "en")
@@ -3076,7 +3276,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if not confirm_text:
                 confirm_text = "✅ Ваше повідомлення надіслано розробнику. Дякуємо!"
         else:
-            confirm_text = "❌ Помилка при відправці. Спробуй пізніше."
+            confirm_text = get_message("error_send_failed", lang)
         
         await _reply(update, confirm_text)
         
@@ -3090,6 +3290,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if user and user.id in ADMIN_IDS and wizard:
         chat_id = update.effective_chat.id
         text = (update.message.text or "").strip()
+        lang = get_user_language(user.id)
 
         if wizard["type"] == "add_task":
             if wizard["step"] == "title":
@@ -3103,8 +3304,17 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
             if wizard["step"] == "description":
                 wizard["payload"]["description"] = text
-                wizard["step"] = "xp"
-                await _wizard_prompt(ctx, chat_id, "💎 Введи *XP* (ціле число > 0):")
+                wizard["step"] = "difficulty"
+                
+                # Show difficulty selection buttons
+                await _cleanup_wizard_prompts(ctx, chat_id)
+                markup = InlineKeyboardMarkup([
+                    [_btn("📗 Легкі", callback_data="wizard_difficulty_easy")],
+                    [_btn("📙 Середні", callback_data="wizard_difficulty_medium")],
+                    [_btn("📕 Важкі", callback_data="wizard_difficulty_hard")],
+                ])
+                msg = await ctx.bot.send_message(chat_id, "⚙️ *Вибери складність:*", reply_markup=markup, parse_mode="Markdown")
+                wizard["bot_prompt_ids"].append(msg.message_id)
                 return
 
             if wizard["step"] == "xp":
@@ -3113,27 +3323,25 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     if xp <= 0:
                         raise ValueError
                 except ValueError:
-                    await _wizard_prompt(ctx, chat_id, "❌ XP має бути цілим числом > 0. Спробуй ще раз:")
+                    await _wizard_prompt(ctx, chat_id, get_message("error_xp_must_be_number", lang))
                     return
 
-                task_id = add_task(
-                    wizard["payload"]["title"],
-                    wizard["payload"].get("description", ""),
-                    xp,
-                )
+                # Store XP and ask about notifications
+                wizard["payload"]["xp"] = xp
+                wizard["step"] = "notify"
+                
                 await _cleanup_wizard_prompts(ctx, chat_id)
-                _clear_wizard(ctx)
-                await _reply(
-                    update,
-                    (
-                        "✅ *Завдання додано*\n\n"
-                        f"ID: `{task_id}`\n"
-                        f"Назва: {wizard['payload']['title']}\n"
-                        f"Опис: {wizard['payload'].get('description', '-')}\n"
-                        f"XP: {xp}"
-                    ),
-                    parse_mode="Markdown",
+                markup = InlineKeyboardMarkup([
+                    [_btn("✅ Так, повідомити", callback_data="wizard_notify_yes")],
+                    [_btn("❌ Ні, без повідомлень", callback_data="wizard_notify_no")],
+                ])
+                msg = await ctx.bot.send_message(
+                    chat_id,
+                    "📢 *Розсилати повідомлення про нове завдання користувачам дельці?*",
+                    reply_markup=markup,
+                    parse_mode="Markdown"
                 )
+                wizard["bot_prompt_ids"].append(msg.message_id)
                 return
 
         if wizard["type"] == "give_xp":
@@ -3141,7 +3349,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 try:
                     target_uid = int(text)
                 except ValueError:
-                    await _wizard_prompt(ctx, chat_id, "❌ User ID має бути числом. Спробуй ще раз:")
+                    await _wizard_prompt(ctx, chat_id, get_message("error_user_id_must_be_number", lang))
                     return
 
                 target_user = get_user_summary(target_uid)
@@ -3160,7 +3368,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     if amount == 0:
                         raise ValueError
                 except ValueError:
-                    await _wizard_prompt(ctx, chat_id, "❌ XP має бути числом і не 0. Спробуй ще раз:")
+                    await _wizard_prompt(ctx, chat_id, get_message("error_xp_cannot_be_zero", lang))
                     return
 
                 target_uid = wizard["payload"]["user_id"]
@@ -3197,7 +3405,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     if price <= 0:
                         raise ValueError
                 except ValueError:
-                    await _wizard_prompt(ctx, chat_id, "❌ Ціна має бути цілим числом > 0. Спробуй ще раз:")
+                    await _wizard_prompt(ctx, chat_id, get_message("error_price_must_be_number", lang))
                     return
 
                 product_id = add_product(
@@ -3251,7 +3459,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         if new_price <= 0:
                             raise ValueError
                     except ValueError:
-                        await _wizard_prompt(ctx, chat_id, "❌ Ціна має бути цілим числом > 0 або «.». Спробуй ще раз:")
+                        await _wizard_prompt(ctx, chat_id, get_message("error_price_invalid_decimal", lang))
                         return
 
                 update_product(
@@ -3277,7 +3485,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if wizard["type"] == "edit_text":
             setting_key = wizard["payload"]["key"]
             if not text:
-                await _wizard_prompt(ctx, chat_id, "❌ Текст не може бути порожнім. Спробуй ще раз:")
+                await _wizard_prompt(ctx, chat_id, get_message("error_text_cannot_be_empty", lang))
                 return
 
             set_setting(setting_key, text)
@@ -3330,13 +3538,52 @@ async def handle_error(update: object, context: ContextTypes.DEFAULT_TYPE):
     # Notify user if possible
     if update and hasattr(update, "message") and update.message:
         try:
+            user_id = update.message.from_user.id
+            lang = get_user_language(user_id)
             await update.message.reply_text(
-                "❌ *Помилка!*\n\n"
-                "Щось пішло не так. Спробуй ще раз або напиши /help для довідки.",
+                "❌ *Помилка!*\n\n" + get_message("error_generic", lang),
                 parse_mode="Markdown"
             )
         except Exception as e:
             logger.error(f"Could not send error message to user: {e}")
+
+
+async def _notify_department_new_task(bot, dept_id: int, task_title: str, task_desc: str):
+    """Send notification to all users in a department about a new task."""
+    try:
+        users = get_users_in_department(dept_id)
+        sent_count = 0
+        failed_count = 0
+        
+        # Get department name
+        dept = get_department(dept_id)
+        dept_name = dept.get('name', f'Dept#{dept_id}') if dept else f'Dept#{dept_id}'
+        emoji = dept.get('emoji', '📌') if dept else '📌'
+        
+        msg_text = (
+            f"{emoji} *Нове завдання в {dept_name}!*\n\n"
+            f"📌 *{task_title}*\n"
+            f"{task_desc}\n\n"
+            f"Перевір нове завдання в /tasks"
+        )
+        
+        for user in users:
+            try:
+                await bot.send_message(
+                    chat_id=user['user_id'],
+                    text=msg_text,
+                    parse_mode="Markdown"
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to notify user {user['user_id']}: {e}")
+                failed_count += 1
+        
+        logger.info(f"📢 Notifications sent: {sent_count}/{len(users)} users in {dept_name}")
+        return sent_count
+    except Exception as e:
+        logger.error(f"Error notifying department {dept_id}: {e}")
+        return 0
 
 
 def main():
@@ -3414,6 +3661,9 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_tasks_page_next, pattern="^tasks_page_next_"))
     app.add_handler(CallbackQueryHandler(handle_tasks_page_prev, pattern="^tasks_page_prev_"))
     
+    # Task department selection (when user has multiple departments)
+    app.add_handler(CallbackQueryHandler(handle_task_dept_select, pattern="^task_dept_select_"))
+    
     # Task category selection (easy/medium/hard)
     app.add_handler(CallbackQueryHandler(handle_tasks_category, pattern="^tasks_(easy|medium|hard)$"))
     
@@ -3421,6 +3671,9 @@ def main():
     
     # Shop & other callbacks
     app.add_handler(CallbackQueryHandler(shop_callback_handler, pattern="shop_buy_.*"))
+    
+    # Wizard callbacks (must be before main button handler)
+    app.add_handler(CallbackQueryHandler(handle_wizard_callbacks, pattern="^wizard_"))
     
     # Main buttons callback handler
     app.add_handler(CallbackQueryHandler(on_button))

@@ -10,7 +10,7 @@ MESSAGES = {
     "lang_select": {
         "en": "🌍 *Select language / Selectează limba / Виберіть мову:*",
         "ro": "🌍 *Select language / Selectează limba / Виберіть мову:*",
-        "uk": "🌍 *Обери мову / Selectează limba / Виберіть мову:*",
+        "uk": "🌍 *Обери мову:*",
     },
     
     "lang_en_btn": {
@@ -879,7 +879,7 @@ MESSAGES = {
     "dept_select_alert": {
         "en": "⚠️ Select at least one department!",
         "ro": "⚠️ Selectează cel puțin un departament!",
-        "uk": "⚠️ Виберай хоча б один департамент!",
+        "uk": "⚠️ Вибери хоча б один департамент!",
     },
     
     "user_no_departments": {

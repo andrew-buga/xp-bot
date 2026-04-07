@@ -2340,19 +2340,17 @@ async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wi
             "payload": {},
             "bot_prompt_ids": [],
         }
-        # Show department selection
+        # Show all departments (admin can add task to any department)
         user = update.effective_user
-        admin_depts = get_user_departments(user.id)
+        all_depts = get_departments()
         
-        if not admin_depts:
-            await _reply(update, "❌ Ти не маєш обраних департаментів")
+        if not all_depts:
+            await _reply(update, "❌ Нема департаментів")
             return
         
-        all_depts = get_departments()
         dept_buttons = []
         for dept in all_depts:
-            if dept['id'] in admin_depts:
-                dept_buttons.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"wizard_department_{dept['id']}")])
+            dept_buttons.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"wizard_department_{dept['id']}")])
         
         markup = InlineKeyboardMarkup(dept_buttons)
         msg = await ctx.bot.send_message(chat_id, "🏢 *Крок 1: Вибери департамент:*", reply_markup=markup, parse_mode="Markdown")

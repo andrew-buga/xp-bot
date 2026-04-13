@@ -1080,7 +1080,44 @@ MESSAGES = {
         "ro": "⬅ Înapoi",
         "uk": "⬅ Назад",
     },
+    
+    # ========== DEPARTMENT NAMES (TRANSLATED) ==========
+    "dept_name_1": {
+        "en": "Social Media & Media",
+        "ro": "Rețelele Sociale și Media",
+        "uk": "SMM та Медіа",
+    },
+    
+    "dept_name_2": {
+        "en": "Finance",
+        "ro": "Finanțe",
+        "uk": "Фінанси",
+    },
+    
+    "dept_name_3": {
+        "en": "Project Management",
+        "ro": "Gestionarea Proiectelor",
+        "uk": "Project Management",
+    },
+    
+    "dept_name_4": {
+        "en": "Communication",
+        "ro": "Comunicare",
+        "uk": "Комунікація",
+    },
+    
+    "dept_name_5": {
+        "en": "IT",
+        "ro": "IT",
+        "uk": "IT",
+    },
 }
+
+
+def get_dept_name_translated(dept_id: int, lang: str) -> str:
+    """Get translated department name by department ID and language."""
+    key = f"dept_name_{dept_id}"
+    return get_message(key, lang)
 
 
 def get_message(key: str, lang: str, **kwargs) -> str:

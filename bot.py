@@ -16,7 +16,7 @@ from telegram.ext import (
 )
 
 from config import ADMIN_IDS, BOT_TOKEN, TELEGRAM_CHANNEL_ID
-from messages import get_message
+from messages import get_message, get_dept_name_translated
 from analytics import log_event, log_admin_action
 from database import (
     admin_subtract_xp,
@@ -215,7 +215,8 @@ async def _notify_admins_new_idea(bot, idea_dict):
         if idea_dict['department_id']:
             dept = get_department(idea_dict['department_id'])
             if dept:
-                dept_name = f" ({dept['emoji']} {dept['name']})"
+                translated_dept_name = get_dept_name_translated(idea_dict['department_id'], "uk")
+                dept_name = f" ({dept['emoji']} {translated_dept_name})"
         text = f"💡 *Нова ідея від {idea_dict['username']}{dept_name}*:\n\n{idea_dict['text']}"
     
     # Notify all admins
@@ -462,7 +463,8 @@ async def show_department_selection(update: Update, ctx: ContextTypes.DEFAULT_TY
     for dept in departments:
         is_selected = dept['id'] in selected
         check = "✓" if is_selected else "☐"
-        btn_text = f"{check} {dept['emoji']} {dept['name']}"
+        dept_name = get_dept_name_translated(dept['id'], lang)
+        btn_text = f"{check} {dept['emoji']} {dept_name}"
         rows.append([_btn(btn_text, callback_data=f"dept_toggle_{dept['id']}")])
     
     # Add Done button
@@ -556,7 +558,8 @@ def _render_manage_depts(user_id: int, lang: str) -> tuple[str, InlineKeyboardMa
     rows = []
     for d in depts:
         if d['id'] in user_depts:
-            rows.append([_btn(f"{d['emoji']} {d['name']}", callback_data="noop"), _btn("❌", callback_data=f"dept_leave_{d['id']}")])
+            dept_name = get_dept_name_translated(d['id'], lang)
+            rows.append([_btn(f"{d['emoji']} {dept_name}", callback_data="noop"), _btn("❌", callback_data=f"dept_leave_{d['id']}")])
     avail = [d for d in depts if d['id'] not in user_depts]
     if avail:
         rows.append([_btn(get_message("dept_add_more_btn", lang), callback_data="dept_add_mode")])
@@ -646,7 +649,8 @@ async def handle_department_selection(update: Update, ctx: ContextTypes.DEFAULT_
         for dept in departments:
             is_selected = dept['id'] in selected
             check = "✓" if is_selected else "☐"
-            btn_text = f"{check} {dept['emoji']} {dept['name']}"
+            dept_name = get_dept_name_translated(dept['id'], lang)
+            btn_text = f"{check} {dept['emoji']} {dept_name}"
             rows.append([_btn(btn_text, callback_data=f"dept_toggle_{dept['id']}")])
         
         # Add Done button
@@ -1277,7 +1281,8 @@ async def cmd_leaderboard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if depts and departments:
         for dept in departments:
             if dept['id'] in depts:
-                dept_label = get_message("leaderboard_department", lang, dept=f"{dept['emoji']} {dept['name']}")
+                dept_name = get_dept_name_translated(dept['id'], lang)
+                dept_label = get_message("leaderboard_department", lang, dept=f"{dept['emoji']} {dept_name}")
                 rows.append([_btn(dept_label, callback_data=f"lb:dept_{dept['id']}")])
     
     rows.append([_btn(get_message("back_btn", lang), callback_data="go_back")])
@@ -1354,7 +1359,8 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         dept_buttons = []
         for dept in all_depts:
             if dept['id'] in user_depts:
-                dept_buttons.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"task_dept_select_{dept['id']}")])
+                dept_name = get_dept_name_translated(dept['id'], lang)
+                dept_buttons.append([_btn(f"{dept['emoji']} {dept_name}", callback_data=f"task_dept_select_{dept['id']}")])
         
         # Add back button
         dept_buttons.append([_btn(get_message("back_btn", lang), callback_data="go_back")])
@@ -1813,7 +1819,8 @@ def _render_users_filter_menu() -> tuple[str, InlineKeyboardMarkup]:
     
     # Department buttons
     for dept in departments:
-        rows.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"a:users:0:d{dept['id']}")])
+        dept_name = get_dept_name_translated(dept['id'], "uk")
+        rows.append([_btn(f"{dept['emoji']} {dept_name}", callback_data=f"a:users:0:d{dept['id']}")])
     
     rows.append([_btn(get_message("admin_menu_btn", "uk"), callback_data="a:menu")])
     
@@ -1874,7 +1881,8 @@ def _select_user_dept_for_role(target_user_id: int, page: int, back_callback: st
             dept = get_department(dept_id)
             dept_role = get_user_dept_role(target_user_id, dept_id)
             role_emoji = {"supervisor": "📋", "coordinator": "⭐", "helper": "🌱", "member": "👤"}.get(dept_role, "👤")
-            rows.append([_btn(f"{dept['emoji']} {dept['name']} {role_emoji}", callback_data=f"a:ud:{target_user_id}:{page}:d{dept_id}")])
+            dept_name = get_dept_name_translated(dept_id, "uk")
+            rows.append([_btn(f"{dept['emoji']} {dept_name} {role_emoji}", callback_data=f"a:ud:{target_user_id}:{page}:d{dept_id}")])
     else:
         lines.append(get_message("user_no_departments", "uk"))
     
@@ -1931,7 +1939,8 @@ def _render_user_detail(target_user_id: int, page: int, admin_user_id: int | Non
             role_emoji = {"supervisor": "📋", "coordinator": "⭐", "helper": "🌱", "member": "👤"}.get(d_role, "❓")
             role_key = {"supervisor": "role_supervisor", "coordinator": "role_coordinator", "helper": "role_helper", "member": "role_member"}.get(d_role)
             role_text = get_message(role_key, "uk") if role_key else get_message("role_unknown", "uk")
-            lines.append(f"  {dept['emoji']} {dept['name']}: {role_emoji} {role_text}")
+            dept_name = get_dept_name_translated(d_id, "uk")
+            lines.append(f"  {dept['emoji']} {dept_name}: {role_emoji} {role_text}")
     else:
         lines.append(get_message("user_no_dept_roles", "uk"))
 
@@ -1948,8 +1957,8 @@ def _render_user_detail(target_user_id: int, page: int, admin_user_id: int | Non
     if dept_id is not None:
         current_dept_role = get_user_dept_role(target_user_id, dept_id)
         dept = get_department(dept_id)
-        
-        lines.append(f"\n*Роль у {dept['emoji']} {dept['name']}:*")
+        dept_name = get_dept_name_translated(dept_id, "uk")
+        lines.append(f"\n*Роль у {dept['emoji']} {dept_name}:*")
         
         # Role buttons for this department (only if viewing a different user)
         if admin_user_id is None or target_user_id != admin_user_id:
@@ -2012,7 +2021,7 @@ def _render_user_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeybo
     chunk = dept_users[start : start + ADMIN_USERS_PAGE_SIZE]
     
     dept = get_department(dept_id)
-    dept_name = f"{dept['emoji']} {dept['name']}" if dept else "Невідомий відділ"
+    dept_name = f"{dept['emoji']} {get_dept_name_translated(dept_id, 'uk')}" if dept else "Невідомий відділ"
     
     lines = [f"👥 *Користувачі {dept_name}* (сторінка {page + 1}/{total_pages})", ""]
     rows = []
@@ -2052,7 +2061,7 @@ def _render_task_page_by_dept(dept_id: int, page: int) -> tuple[str, InlineKeybo
     chunk = dept_tasks[start : start + ADMIN_TASKS_PAGE_SIZE]
 
     dept = get_department(dept_id)
-    dept_name = f"{dept['emoji']} {dept['name']}" if dept else "Unknown Department"
+    dept_name = f"{dept['emoji']} {get_dept_name_translated(dept_id, 'uk')}" if dept else "Unknown Department"
     
     header = get_message("admin_delete_tasks_dept_header", "uk", dept_name=dept_name)
     lines = [header, get_message("admin_delete_tasks_instruction", "uk"), ""]
@@ -2102,8 +2111,8 @@ def _render_edit_delete_dept_menu(action: str) -> tuple[str, InlineKeyboardMarku
             emoji = dept["emoji"]
         except (KeyError, TypeError):
             emoji = "🏢"
-        dept_name = dept["name"]
         dept_id = dept["id"]
+        dept_name = get_dept_name_translated(dept_id, "uk")
         dept_callback = f"a:edit_diff:0:d{dept_id}" if action == "edit" else f"a:del_diff:0:d{dept_id}"
         rows.append([_btn(f"{emoji} {dept_name}", callback_data=dept_callback)])
     
@@ -2165,7 +2174,7 @@ def _render_filtered_task_page(
         dept_id = int(dept_filter[1:])
         filtered_tasks = [t for t in all_tasks if t["department_id"] == dept_id]
         dept = get_department(dept_id)
-        dept_name = f"{dept['emoji']} {dept['name']}" if dept else "Unknown"
+        dept_name = f"{dept['emoji']} {get_dept_name_translated(dept['id'], 'uk')}" if dept else "Unknown"
     else:
         filtered_tasks = all_tasks
         dept_name = "Усі департаменти"
@@ -2328,7 +2337,8 @@ async def _start_edit_task_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE
                 emoji = dept['emoji']
             except (KeyError, TypeError):
                 emoji = "🏢"
-            buttons.append([_btn(f"{emoji} {dept['name']}", callback_data=f"wizard_edit_department_{dept['id']}_{task_id}_{page}_{dept_filter or ''}_{difficulty or ''}")])
+            dept_name = get_dept_name_translated(dept['id'], "uk")
+            buttons.append([_btn(f"{emoji} {dept_name}", callback_data=f"wizard_edit_department_{dept['id']}_{task_id}_{page}_{dept_filter or ''}_{difficulty or ''}")])
         buttons.append([_btn("⬅ Назад", callback_data=f"a:edit:{task_id}:{page}:{dept_filter or ''}:{difficulty or ''}")])
         
         markup = InlineKeyboardMarkup(buttons)
@@ -2365,7 +2375,8 @@ async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wi
         
         dept_buttons = []
         for dept in all_depts:
-            dept_buttons.append([_btn(f"{dept['emoji']} {dept['name']}", callback_data=f"wizard_department_{dept['id']}")])
+            dept_name = get_dept_name_translated(dept['id'], "uk")
+            dept_buttons.append([_btn(f"{dept['emoji']} {dept_name}", callback_data=f"wizard_department_{dept['id']}")])
         
         markup = InlineKeyboardMarkup(dept_buttons)
         msg = await ctx.bot.send_message(chat_id, "🏢 *Крок 1: Вибери департамент:*", reply_markup=markup, parse_mode="Markdown")
@@ -2614,10 +2625,7 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         # Get department name
         dept = get_department(task['department_id'])
         if dept:
-            try:
-                dept_name = dept['name']
-            except (KeyError, TypeError):
-                dept_name = "N/A"
+            dept_name = get_dept_name_translated(task['department_id'], "uk")
         else:
             dept_name = "N/A"
         
@@ -2792,7 +2800,8 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             "helper": "Хелпер",
             "member": "Учасник"
         }[new_dept_role]
-        await _edit_message_text(query, text=f"✅ {role_emoji} Роль змінена на: *{role_display}* у {dept['emoji']} {dept['name']}\n\n{text}", 
+        dept_name = get_dept_name_translated(dept_id, "uk")
+        await _edit_message_text(query, text=f"✅ {role_emoji} Роль змінена на: *{role_display}* у {dept['emoji']} {dept_name}\n\n{text}", 
                                 reply_markup=markup, parse_mode="Markdown")
         logger.debug(f"User {target_user_id} role changed to {new_dept_role} in dept {dept_id}")
         return
@@ -2892,7 +2901,8 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         dept_label = ""
         if dept_id:
             dept = get_department(dept_id)
-            dept_label = f" ({dept['emoji']} {dept['name']})"
+            dept_name = get_dept_name_translated(task["department_id"], 'uk')
+            dept_label = f" ({dept['emoji']} {dept_name})"
         
         await _edit_message_text(query, 
             text=(
@@ -3076,10 +3086,7 @@ async def handle_wizard_callbacks(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         if wizard["payload"].get("department"):
             dept = get_department(wizard["payload"]["department"])
             if dept:
-                try:
-                    dept_name = dept["name"]
-                except (KeyError, TypeError):
-                    dept_name = "N/A"
+                dept_name = get_dept_name_translated(wizard["payload"]["department"], "uk")
                 dept_text = f"\n🏢 Департамент: {dept_name}"
         
         notify_text = f"\n📢 Повідомлень надіслано: {sent_count}" if should_notify else ""
@@ -3133,10 +3140,7 @@ async def handle_wizard_callbacks(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         # Get new department name
         dept = get_department(new_dept_id)
         if dept:
-            try:
-                dept_name = dept['name']
-            except (KeyError, TypeError):
-                dept_name = "N/A"
+            dept_name = get_dept_name_translated(new_dept_id, "uk")
         else:
             dept_name = "N/A"
         
@@ -3196,7 +3200,7 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             logger.info(f"📊 Department {dept_id} leaderboard requested. Got {len(top) if top else 0} users")
             
             dept = get_department(dept_id)
-            dept_name = dept['name'] if dept else "Unknown"
+            dept_name = get_dept_name_translated(dept['id'], 'uk') if dept else "Unknown"
             title = f"📊 {dept_name}"
         
         if not top:
@@ -3234,7 +3238,8 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for dept in departments:
             is_selected = dept['id'] in selected
             check = "✓" if is_selected else "☐"
-            btn_text = f"{check} {dept['emoji']} {dept['name']}"
+            dept_name = get_dept_name_translated(dept['id'], lang)
+            btn_text = f"{check} {dept['emoji']} {dept_name}"
             rows.append([_btn(btn_text, callback_data=f"dept_toggle_{dept['id']}")])
         
         # Add Done button
@@ -3279,7 +3284,8 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for dept in departments:
             is_selected = dept['id'] in selected
             check = "✓" if is_selected else "☐"
-            btn_text = f"{check} {dept['emoji']} {dept['name']}"
+            dept_name = get_dept_name_translated(dept['id'], lang)
+            btn_text = f"{check} {dept['emoji']} {dept_name}"
             rows.append([_btn(btn_text, callback_data=f"dept_toggle_{dept['id']}")])
         
         # Add Done button
@@ -3583,7 +3589,7 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if dept_id and len(dept_id) > 0:
                 dept = get_department(dept_id[0])
                 if dept:
-                    dept_name = dept["name"] if isinstance(dept, dict) else "Unknown"
+                    dept_name = get_dept_name_translated(dept_id[0], 'uk')
         except Exception:
             pass
         
@@ -3928,12 +3934,8 @@ async def _notify_department_new_task(bot, dept_id: int, task_title: str, task_d
         # Get department name
         dept = get_department(dept_id)
         if dept:
-            try:
-                dept_name = dept['name']
-                emoji = dept['emoji']
-            except (KeyError, TypeError):
-                dept_name = f'Dept#{dept_id}'
-                emoji = '📌'
+            dept_name = get_dept_name_translated(dept_id, "uk")
+            emoji = dept['emoji']
         else:
             dept_name = f'Dept#{dept_id}'
             emoji = '📌'

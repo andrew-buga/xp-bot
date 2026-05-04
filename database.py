@@ -139,12 +139,35 @@ def init_db():
             task_id      INTEGER,
             proof_text   TEXT,
             proof_file_id TEXT,
+            proof_file_ids TEXT,
             status       TEXT DEFAULT 'pending',
             submitted_at TEXT,
             reviewed_at  TEXT,
             reviewer_id  INTEGER,
+            review_comment TEXT,
             FOREIGN KEY(user_id) REFERENCES users(user_id),
             FOREIGN KEY(task_id) REFERENCES tasks(id)
+        )
+    """)
+
+    # Lightweight migration for submissions table
+    c.execute("PRAGMA table_info(submissions)")
+    submission_columns = {row[1] for row in c.fetchall()}
+    if "proof_file_ids" not in submission_columns:
+        c.execute("ALTER TABLE submissions ADD COLUMN proof_file_ids TEXT")
+    if "review_comment" not in submission_columns:
+        c.execute("ALTER TABLE submissions ADD COLUMN review_comment TEXT")
+
+    # ============ SUBMISSION NOTIFICATIONS TABLE ============
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS submission_notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            submission_id INTEGER NOT NULL,
+            admin_id INTEGER NOT NULL,
+            message_id INTEGER NOT NULL,
+            message_type TEXT DEFAULT 'text',
+            created_at TEXT,
+            FOREIGN KEY(submission_id) REFERENCES submissions(id)
         )
     """)
 
@@ -269,6 +292,43 @@ def init_db():
             FOREIGN KEY(task_id) REFERENCES tasks(id),
             FOREIGN KEY(user_id) REFERENCES users(user_id),
             FOREIGN KEY(submission_id) REFERENCES submissions(id)
+        )
+    """)
+
+    # ============ URGENT TASKS TABLES ============
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS urgent_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            description TEXT,
+            xp_reward INTEGER DEFAULT 10,
+            department_id INTEGER NOT NULL,
+            required_slots INTEGER DEFAULT 1,
+            deadline_at TEXT,
+            created_by INTEGER NOT NULL,
+            created_at TEXT,
+            status TEXT DEFAULT 'open',
+            is_active INTEGER DEFAULT 1,
+            FOREIGN KEY(department_id) REFERENCES departments(id)
+        )
+    """)
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS urgent_task_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            urgent_task_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            status TEXT DEFAULT 'reserved',
+            assigned_by INTEGER,
+            reserved_at TEXT,
+            submitted_at TEXT,
+            reviewed_at TEXT,
+            reviewer_id INTEGER,
+            proof_text TEXT,
+            proof_file_ids TEXT,
+            review_comment TEXT,
+            FOREIGN KEY(urgent_task_id) REFERENCES urgent_tasks(id),
+            FOREIGN KEY(user_id) REFERENCES users(user_id)
         )
     """)
 
@@ -1081,6 +1141,15 @@ def list_users(limit=10, offset=0):
 
 def get_user_summary(user_id):
     conn = get_conn()
+
+
+def list_all_users():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT user_id, username, first_name, is_banned FROM users ORDER BY joined_at DESC")
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows] if rows else []
     c = conn.cursor()
     c.execute(
         """
@@ -1264,14 +1333,18 @@ def update_task(task_id, title=None, description=None, xp_reward=None, difficult
 
 # ============ SUBMISSIONS ----------
 
-def add_submission(user_id, task_id, proof_text, proof_file_id=None):
+def add_submission(user_id, task_id, proof_text, proof_file_id=None, proof_file_ids=None):
     conn = get_conn()
     c = conn.cursor()
+    proof_ids_json = json.dumps(proof_file_ids) if proof_file_ids else None
+    primary_file_id = proof_file_id
+    if not primary_file_id and proof_file_ids:
+        primary_file_id = proof_file_ids[0]
     c.execute("""
         INSERT INTO submissions
-            (user_id, task_id, proof_text, proof_file_id, status, submitted_at)
-        VALUES (?, ?, ?, ?, 'pending', ?)
-    """, (user_id, task_id, proof_text, proof_file_id, datetime.now().isoformat()))
+            (user_id, task_id, proof_text, proof_file_id, proof_file_ids, status, submitted_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?)
+    """, (user_id, task_id, proof_text, primary_file_id, proof_ids_json, datetime.now().isoformat()))
     sub_id = c.lastrowid
     conn.commit()
     conn.close()
@@ -1300,6 +1373,14 @@ def review_submission(submission_id, status, reviewer_id):
     success = c.rowcount > 0
     conn.close()
     return success
+
+
+def update_submission_comment(submission_id, review_comment):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("UPDATE submissions SET review_comment=? WHERE id=?", (review_comment, submission_id))
+    conn.commit()
+    conn.close()
 
 
 def has_pending(user_id, task_id):
@@ -1332,7 +1413,7 @@ def get_pending_submissions():
     c = conn.cursor()
     c.execute("""
         SELECT 
-            s.id, s.user_id, s.task_id, s.proof_text, s.proof_file_id,
+            s.id, s.user_id, s.task_id, s.proof_text, s.proof_file_id, s.proof_file_ids,
             s.submitted_at, s.status, s.reviewed_at, s.reviewer_id,
             u.username, u.first_name,
             t.title
@@ -1353,11 +1434,12 @@ def get_approved_submissions():
     c = conn.cursor()
     c.execute("""
         SELECT 
-            s.id, s.user_id, s.task_id, s.proof_text, s.proof_file_id,
+            s.id, s.user_id, s.task_id, s.proof_text, s.proof_file_id, s.proof_file_ids,
             s.submitted_at, s.status, s.reviewed_at, s.reviewer_id,
             u.username, u.first_name,
             t.title,
-            ru.username AS reviewer_username
+            ru.username AS reviewer_username,
+            s.review_comment
         FROM submissions s
         LEFT JOIN users u ON s.user_id = u.user_id
         LEFT JOIN tasks t ON s.task_id = t.id
@@ -1368,6 +1450,39 @@ def get_approved_submissions():
     rows = c.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def add_submission_notification(submission_id, admin_id, message_id, message_type="text"):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO submission_notifications
+            (submission_id, admin_id, message_id, message_type, created_at)
+        VALUES (?, ?, ?, ?, ?)
+    """, (submission_id, admin_id, message_id, message_type, datetime.now().isoformat()))
+    conn.commit()
+    conn.close()
+
+
+def get_submission_notifications(submission_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        SELECT submission_id, admin_id, message_id, message_type
+        FROM submission_notifications
+        WHERE submission_id=?
+    """, (submission_id,))
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def delete_submission_notifications(submission_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM submission_notifications WHERE submission_id=?", (submission_id,))
+    conn.commit()
+    conn.close()
 
 
 # ============ TASK_EXECUTIONS (Task History Tracking) ============
@@ -1452,6 +1567,230 @@ def update_task_execution_by_task(user_id, task_id, status, submission_id=None, 
     
     conn.close()
     return False
+
+
+# ============ URGENT TASKS ----------
+
+def add_urgent_task(
+    title,
+    description,
+    xp_reward,
+    department_id,
+    required_slots,
+    deadline_at,
+    created_by,
+):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT INTO urgent_tasks
+            (title, description, xp_reward, department_id, required_slots, deadline_at, created_by, created_at, status, is_active)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open', 1)
+        """,
+        (
+            title,
+            description,
+            xp_reward,
+            department_id,
+            required_slots,
+            deadline_at,
+            created_by,
+            datetime.now().isoformat(),
+        ),
+    )
+    task_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return task_id
+
+
+def get_urgent_task(task_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM urgent_tasks WHERE id=?", (task_id,))
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def list_urgent_tasks_by_department(dept_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT * FROM urgent_tasks
+        WHERE is_active=1 AND department_id=?
+        ORDER BY created_at DESC
+        """,
+        (dept_id,),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def update_urgent_task_status(task_id, status, is_active=None):
+    conn = get_conn()
+    c = conn.cursor()
+    if is_active is None:
+        c.execute("UPDATE urgent_tasks SET status=? WHERE id=?", (status, task_id))
+    else:
+        c.execute("UPDATE urgent_tasks SET status=?, is_active=? WHERE id=?", (status, is_active, task_id))
+    conn.commit()
+    conn.close()
+
+
+def update_urgent_task_deadline(task_id, deadline_at):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("UPDATE urgent_tasks SET deadline_at=? WHERE id=?", (deadline_at, task_id))
+    conn.commit()
+    conn.close()
+
+
+def get_urgent_task_assignments(task_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT uta.*, u.username, u.first_name
+        FROM urgent_task_assignments uta
+        LEFT JOIN users u ON uta.user_id = u.user_id
+        WHERE uta.urgent_task_id=?
+        ORDER BY uta.reserved_at ASC
+        """,
+        (task_id,),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def get_urgent_task_assignment(task_id, user_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT * FROM urgent_task_assignments
+        WHERE urgent_task_id=? AND user_id=?
+        ORDER BY reserved_at DESC
+        LIMIT 1
+        """,
+        (task_id, user_id),
+    )
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_urgent_assignment_by_id(assignment_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT uta.*, ut.department_id, ut.title as task_title, ut.xp_reward, ut.required_slots
+        FROM urgent_task_assignments uta
+        LEFT JOIN urgent_tasks ut ON uta.urgent_task_id = ut.id
+        WHERE uta.id=?
+        """,
+        (assignment_id,),
+    )
+    row = c.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def count_urgent_task_active_assignments(task_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT COUNT(*) as cnt
+        FROM urgent_task_assignments
+        WHERE urgent_task_id=? AND status IN ('reserved', 'submitted', 'approved')
+        """,
+        (task_id,),
+    )
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+
+def count_urgent_task_approved_assignments(task_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        SELECT COUNT(*) as cnt
+        FROM urgent_task_assignments
+        WHERE urgent_task_id=? AND status='approved'
+        """,
+        (task_id,),
+    )
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+
+def add_urgent_task_assignment(task_id, user_id, assigned_by=None):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        INSERT INTO urgent_task_assignments
+            (urgent_task_id, user_id, status, assigned_by, reserved_at)
+        VALUES (?, ?, 'reserved', ?, ?)
+        """,
+        (task_id, user_id, assigned_by, datetime.now().isoformat()),
+    )
+    assign_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return assign_id
+
+
+def update_urgent_assignment_submission(assignment_id, proof_text, proof_file_ids):
+    conn = get_conn()
+    c = conn.cursor()
+    proof_ids_json = json.dumps(proof_file_ids) if proof_file_ids else None
+    c.execute(
+        """
+        UPDATE urgent_task_assignments
+        SET status='submitted', submitted_at=?, proof_text=?, proof_file_ids=?
+        WHERE id=?
+        """,
+        (datetime.now().isoformat(), proof_text, proof_ids_json, assignment_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def review_urgent_assignment(assignment_id, status, reviewer_id, review_comment=None):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        """
+        UPDATE urgent_task_assignments
+        SET status=?, reviewed_at=?, reviewer_id=?, review_comment=?
+        WHERE id=?
+        """,
+        (status, datetime.now().isoformat(), reviewer_id, review_comment, assignment_id),
+    )
+    conn.commit()
+    conn.close()
+
+
+def update_urgent_assignment_comment(assignment_id, review_comment):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "UPDATE urgent_task_assignments SET review_comment=? WHERE id=?",
+        (review_comment, assignment_id),
+    )
+    conn.commit()
+    conn.close()
+
 
 
 def get_stats():

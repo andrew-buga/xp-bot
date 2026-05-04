@@ -175,6 +175,12 @@ MESSAGES = {
         "ro": "📕 Dificil",
         "uk": "📕 Важкі",
     },
+
+    "tasks_urgent_btn": {
+        "en": "🚨 Urgent",
+        "ro": "🚨 Urgent",
+        "uk": "🚨 Термінові",
+    },
     
     "tasks_category_header": {
         "en": "📋 *{difficulty} tasks*\n\nThese are tasks for your department.",
@@ -216,6 +222,90 @@ MESSAGES = {
         "en": "📤 *Submitting: {title}*\n\nSend proof of completion:\n• 📸 Screenshot\n• 📝 Or text description",
         "ro": "📤 *Trimitere: {title}*\n\nTrimite dovada finalizării:\n• 📸 Captură de ecran\n• 📝 Sau descriere text",
         "uk": "📤 *Здача: {title}*\n\nНадішли підтвердження виконання:\n• 📸 Скріншот\n• 📝 Або текстовий опис",
+    },
+
+    "urgent_tasks_header": {
+        "en": "🚨 *Urgent tasks*",
+        "ro": "🚨 *Sarcini urgente*",
+        "uk": "🚨 *Термінові завдання*",
+    },
+
+    "urgent_tasks_none": {
+        "en": "✅ No urgent tasks right now.",
+        "ro": "✅ Nu există sarcini urgente acum.",
+        "uk": "✅ Наразі немає термінових завдань.",
+    },
+
+    "urgent_task_slots": {
+        "en": "✅ Free slots: {count}",
+        "ro": "✅ Locuri libere: {count}",
+        "uk": "✅ Вільні місця: {count}",
+    },
+
+    "urgent_task_in_progress": {
+        "en": "⏳ In progress",
+        "ro": "⏳ În progres",
+        "uk": "⏳ В процесі",
+    },
+
+    "urgent_task_deadline": {
+        "en": "Deadline",
+        "ro": "Termen limită",
+        "uk": "Дедлайн",
+    },
+
+    "urgent_task_assignees": {
+        "en": "Assignees",
+        "ro": "Responsabili",
+        "uk": "Виконавці",
+    },
+
+    "urgent_task_reserve_btn": {
+        "en": "✅ Reserve",
+        "ro": "✅ Rezervă",
+        "uk": "✅ Забронювати",
+    },
+
+    "urgent_task_submit_btn": {
+        "en": "📤 Submit",
+        "ro": "📤 Trimite",
+        "uk": "📤 Здати",
+    },
+
+    "urgent_task_submitted_btn": {
+        "en": "⏳ Under review",
+        "ro": "⏳ Sub revizuire",
+        "uk": "⏳ На перевірці",
+    },
+
+    "urgent_task_done_btn": {
+        "en": "✅ Done",
+        "ro": "✅ Gata",
+        "uk": "✅ Виконано",
+    },
+
+    "urgent_task_in_progress_btn": {
+        "en": "⏳ In progress",
+        "ro": "⏳ În progres",
+        "uk": "⏳ В процесі",
+    },
+
+    "urgent_task_submit_prompt": {
+        "en": "📤 *Submitting urgent task: {title}*\n\nSend proof:\n• 📸 Screenshot\n• 📝 Or text description",
+        "ro": "📤 *Trimitere sarcină urgentă: {title}*\n\nTrimite dovada:\n• 📸 Captură\n• 📝 Sau text",
+        "uk": "📤 *Здача термінового: {title}*\n\nНадішли підтвердження:\n• 📸 Скріншот\n• 📝 Або текст",
+    },
+
+    "urgent_task_submitted": {
+        "en": "✅ *Urgent task submitted!*\n\n«{title}» — supervisor will review soon.",
+        "ro": "✅ *Sarcina urgentă trimisă!*\n\n«{title}» — supervizorul va verifica curând.",
+        "uk": "✅ *Термінове здано!*\n\n«{title}» — супервайзер перевірить найближчим часом.",
+    },
+
+    "urgent_task_no_reservation": {
+        "en": "❌ You have no reservation for this urgent task.",
+        "ro": "❌ Nu ai rezervare pentru această sarcină urgentă.",
+        "uk": "❌ У тебе немає бронювання цього термінового завдання.",
     },
     
     "cancel_btn": {
@@ -481,6 +571,114 @@ MESSAGES = {
         "en": "🧩 *Bot Information Editor*",
         "ro": "🧩 *Editor Informații Bot*",
         "uk": "🧩 *Редактор інформації бота*",
+    },
+
+    "urgent_admin_header": {
+        "en": "🚨 *Urgent Tasks Admin*",
+        "ro": "🚨 *Administrare sarcini urgente*",
+        "uk": "🚨 *Адмін термінових завдань*",
+    },
+
+    "urgent_admin_only": {
+        "en": "❌ Only supervisors/admins can manage urgent tasks.",
+        "ro": "❌ Doar supervizorii/adminii pot gestiona sarcini urgente.",
+        "uk": "❌ Тільки супервайзери/адміни можуть керувати терміновими.",
+    },
+
+    "urgent_admin_add_btn": {
+        "en": "➕ Add urgent task",
+        "ro": "➕ Adaugă sarcină urgentă",
+        "uk": "➕ Додати термінове",
+    },
+
+    "urgent_admin_manage_btn": {
+        "en": "👥 Manage urgent tasks",
+        "ro": "👥 Gestionează urgente",
+        "uk": "👥 Керувати терміновими",
+    },
+
+    "urgent_admin_select_dept": {
+        "en": "🏢 Select department:",
+        "ro": "🏢 Selectează departamentul:",
+        "uk": "🏢 Обери департамент:",
+    },
+
+    "urgent_admin_created": {
+        "en": "✅ Urgent task #{task_id} created. Push sent: {count}",
+        "ro": "✅ Sarcina urgentă #{task_id} creată. Push trimis: {count}",
+        "uk": "✅ Термінове #{task_id} створено. Push надіслано: {count}",
+    },
+
+    "urgent_admin_assigned": {
+        "en": "✅ Assigned {count} users.",
+        "ro": "✅ Au fost asignați {count} utilizatori.",
+        "uk": "✅ Призначено користувачів: {count}.",
+    },
+
+    "urgent_admin_reassigned": {
+        "en": "✅ Assignee updated.",
+        "ro": "✅ Responsabil actualizat.",
+        "uk": "✅ Виконавця змінено.",
+    },
+
+    "urgent_assigned_user": {
+        "en": "✅ You were assigned to urgent task: {title}",
+        "ro": "✅ Ai fost asignat la sarcina urgentă: {title}",
+        "uk": "✅ Тебе призначено на термінове: {title}",
+    },
+
+    "urgent_reassigned_old": {
+        "en": "⚠️ You were removed from urgent task: {title}",
+        "ro": "⚠️ Ai fost scos din sarcina urgentă: {title}",
+        "uk": "⚠️ Тебе замінили у терміновому: {title}",
+    },
+
+    "urgent_reassigned_new": {
+        "en": "✅ You were assigned to urgent task: {title}",
+        "ro": "✅ Ai fost asignat la sarcina urgentă: {title}",
+        "uk": "✅ Тебе призначено на термінове: {title}",
+    },
+
+    "admin_push_btn": {
+        "en": "📣 Push message",
+        "ro": "📣 Mesaj push",
+        "uk": "📣 Push-повідомлення",
+    },
+
+    "admin_push_select_target": {
+        "en": "📣 *Select target for push:*",
+        "ro": "📣 *Selectează ținta pentru push:*",
+        "uk": "📣 *Обери отримувачів push-повідомлення:*",
+    },
+
+    "admin_push_target_all_btn": {
+        "en": "🌍 All users",
+        "ro": "🌍 Toți utilizatorii",
+        "uk": "🌍 Усі користувачі",
+    },
+
+    "admin_push_target_user_btn": {
+        "en": "👤 Specific user",
+        "ro": "👤 Utilizator specific",
+        "uk": "👤 Конкретний користувач",
+    },
+
+    "admin_push_prompt_user_id": {
+        "en": "👤 Enter *user_id* of the recipient:",
+        "ro": "👤 Introdu *user_id* al destinatarului:",
+        "uk": "👤 Введи *user_id* отримувача:",
+    },
+
+    "admin_push_prompt_text": {
+        "en": "✍️ Enter the message text:",
+        "ro": "✍️ Introdu textul mesajului:",
+        "uk": "✍️ Введи текст повідомлення:",
+    },
+
+    "admin_push_sent": {
+        "en": "✅ Push sent to {count} users.",
+        "ro": "✅ Push trimis către {count} utilizatori.",
+        "uk": "✅ Push надіслано {count} користувачам.",
     },
     
     # ========== USER PROFILE & INFO ==========

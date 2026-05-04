@@ -5,7 +5,7 @@ from collections import defaultdict, deque
 from functools import wraps
 from datetime import datetime
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputMediaPhoto
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -21,6 +21,7 @@ from analytics import log_event, log_admin_action
 from database import (
     admin_subtract_xp,
     add_submission,
+    add_submission_notification,
     add_task,
     add_xp,
     atomic_award_xp,
@@ -45,6 +46,7 @@ from database import (
     init_db,
     is_user_banned,
     list_users,
+    list_all_users,
     register_user,
     review_submission,
     set_setting,
@@ -75,11 +77,28 @@ from database import (
     get_user_dept_role,
     get_user_all_dept_roles,
     get_users_in_department,
+    get_dept_supervisors,
     get_pending_submissions,
+    get_submission_notifications,
     get_approved_submissions,
     add_task_execution,
     update_task_execution_by_task,
     update_task,
+    update_submission_comment,
+    delete_submission_notifications,
+    add_urgent_task,
+    get_urgent_task,
+    list_urgent_tasks_by_department,
+    get_urgent_task_assignments,
+    get_urgent_task_assignment,
+    count_urgent_task_active_assignments,
+    count_urgent_task_approved_assignments,
+    add_urgent_task_assignment,
+    get_urgent_assignment_by_id,
+    update_urgent_assignment_submission,
+    review_urgent_assignment,
+    update_urgent_assignment_comment,
+    update_urgent_task_status,
 )
 
 
@@ -171,6 +190,108 @@ def _normalize_markup(markup):
     return InlineKeyboardMarkup(rows)
 
 
+def _safe_text_preview(text: str | None, limit: int = 300) -> str:
+    if not text:
+        return ""
+    text = text.replace("\n", " ").replace("\r", " ").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit]
+
+
+def _collect_user_context(user_id: int) -> dict:
+    try:
+        return {
+            "user_id": user_id,
+            "global_role": get_user_global_role(user_id) or "user",
+            "departments": get_user_departments(user_id) or [],
+            "language": get_user_language(user_id) or "uk",
+        }
+    except Exception:
+        return {"user_id": user_id}
+
+
+def _collect_message_action(update: Update) -> dict | None:
+    msg = update.effective_message
+    if not msg:
+        return None
+
+    text = msg.text or msg.caption or ""
+    entities = msg.entities or []
+    is_command = any(ent.type == "bot_command" and ent.offset == 0 for ent in entities)
+    command = None
+    if is_command and text:
+        command = text.split()[0].split("@")[0]
+
+    media_types = []
+    if msg.photo:
+        media_types.append("photo")
+    if msg.document:
+        media_types.append("document")
+    if msg.video:
+        media_types.append("video")
+    if msg.audio:
+        media_types.append("audio")
+    if msg.voice:
+        media_types.append("voice")
+    if msg.video_note:
+        media_types.append("video_note")
+    if msg.sticker:
+        media_types.append("sticker")
+
+    return {
+        "action_kind": "command" if is_command else "message",
+        "command": command,
+        "text_preview": _safe_text_preview(text),
+        "has_media": bool(media_types),
+        "media_types": media_types,
+        "message_id": msg.message_id,
+        "chat_id": msg.chat_id,
+    }
+
+
+def _collect_callback_action(update: Update) -> dict | None:
+    query = update.callback_query
+    if not query:
+        return None
+
+    msg = query.message
+    return {
+        "action_kind": "callback",
+        "callback_data": query.data or "",
+        "message_id": msg.message_id if msg else None,
+        "chat_id": msg.chat_id if msg else None,
+    }
+
+
+async def log_user_message_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not user:
+        return
+
+    action = _collect_message_action(update)
+    if not action:
+        return
+
+    context = _collect_user_context(user.id)
+    payload = {**context, **action}
+    log_event("user_action", user_id=user.id, data=payload)
+
+
+async def log_user_callback_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    if not user:
+        return
+
+    action = _collect_callback_action(update)
+    if not action:
+        return
+
+    context = _collect_user_context(user.id)
+    payload = {**context, **action}
+    log_event("user_action", user_id=user.id, data=payload)
+
+
 async def _reply(update: Update, text: str, **kwargs):
     text = _normalize_text(text)
     if "reply_markup" in kwargs:
@@ -200,6 +321,105 @@ async def _edit_message_caption(query, caption: str, **kwargs):
     if "reply_markup" in kwargs:
         kwargs["reply_markup"] = _normalize_markup(kwargs["reply_markup"])
     return await query.edit_message_caption(**kwargs)
+
+
+async def _send_user_message(bot, update: Update | None, user_id: int, text: str, **kwargs):
+    if update is not None:
+        return await _reply(update, text, **kwargs)
+    return await bot.send_message(chat_id=user_id, text=_normalize_text(text), **kwargs)
+
+
+def _format_admin_submission_text(sub_id, user, task, proof_text):
+    user_tag = f"@{user.username}" if user.username else user.first_name
+    admin_text = (
+        f"🔔 *Нова заявка #{sub_id}*\n\n"
+        f"👤 Від: {user_tag} (ID: `{user.id}`)\n"
+        f"📌 Завдання: *{task['title']}*\n"
+        f"💎 XP: *{task['xp_reward']}*"
+    )
+    if proof_text:
+        admin_text += f"\n💬 Текст:\n{proof_text[:300]}"
+    return admin_text
+
+
+async def _update_submission_notifications(ctx: ContextTypes.DEFAULT_TYPE, sub_id: int, updated_text: str):
+    notifications = get_submission_notifications(sub_id)
+    for note in notifications:
+        try:
+            if note["message_type"] == "photo":
+                await ctx.bot.edit_message_caption(
+                    chat_id=note["admin_id"],
+                    message_id=note["message_id"],
+                    caption=_normalize_text(updated_text),
+                    parse_mode="Markdown",
+                    reply_markup=None,
+                )
+            else:
+                await ctx.bot.edit_message_text(
+                    chat_id=note["admin_id"],
+                    message_id=note["message_id"],
+                    text=_normalize_text(updated_text),
+                    parse_mode="Markdown",
+                    reply_markup=None,
+                )
+        except Exception:
+            pass
+    delete_submission_notifications(sub_id)
+
+
+async def _send_review_result(ctx: ContextTypes.DEFAULT_TYPE, pending: dict, comment_text: str | None):
+    user_id = pending["user_id"]
+    status = pending["status"]
+    task_title = pending["task_title"]
+    xp_reward = pending["xp_reward"]
+
+    if status == "approved":
+        user_msg = (
+            f"🎉 *Завдання підтверджено!*\n\n"
+            f"✅ «{task_title}» — зараховано!\n"
+            f"💎 +{xp_reward} XP нараховано!\n\n"
+            f"Переглянь профіль: /xp"
+        )
+    else:
+        user_lang = get_user_language(user_id)
+        user_msg = (
+            f"❌ *Завдання не прийнято*\n\n"
+            f"«{task_title}» — відхилено.\n"
+            f"{get_message('error_submission_failed', user_lang)}"
+        )
+
+    if comment_text:
+        user_msg += f"\n\n💬 Коментар: {comment_text}"
+
+    try:
+        await ctx.bot.send_message(user_id, _normalize_text(user_msg), parse_mode="Markdown")
+    except Exception:
+        pass
+
+
+async def _process_media_group_job(context: ContextTypes.DEFAULT_TYPE):
+    data = context.job.data if context.job else {}
+    user_id = data.get("user_id")
+    group_id = data.get("group_id")
+    if not user_id or not group_id:
+        return
+
+    user_data = context.application.user_data.get(user_id)
+    if not user_data:
+        return
+
+    media_groups = user_data.get("media_groups") or {}
+    group = media_groups.pop(group_id, None)
+    if not group:
+        return
+
+    user = group.get("user")
+    if not user:
+        return
+
+    proof_text = group.get("text", "")
+    proof_file_ids = group.get("file_ids", [])
+    await _process_proof_payload(None, context, user, proof_text, proof_file_ids)
 
 
 async def _notify_admins_new_idea(bot, idea_dict):
@@ -984,6 +1204,7 @@ def _admin_menu_markup(lang: str = "uk", dept_id: int | None = None) -> InlineKe
             [_btn("📋 Перегляд завдань", callback_data="a:review_tasks:0")],
             [_btn(get_message("admin_users_btn", lang), callback_data="a:users:0")],
             [_btn(get_message("admin_ideas_btn", lang), callback_data=f"a:ideas:0:{f'd{dept_id}' if dept_id else 'g'}")],
+            [_btn(get_message("admin_push_btn", lang), callback_data="a:push")],
             [_btn(get_message("admin_xp_btn", lang), callback_data=f"a:xp:{dept_id or 'g'}")],
             [_btn(get_message("admin_stats_btn", lang), callback_data=f"a:stats:{dept_id or 'g'}")],
             [_btn(get_message("admin_shop_btn", lang), callback_data="a:shop_list")],
@@ -1312,6 +1533,10 @@ async def cmd_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if user.id in ADMIN_IDS:
         admin_text = "🛠 /admin — адмін-панель" if lang == "uk" else "🛠 /admin — admin panel" if lang == "en" else "🛠 /admin — panou admin"
         text += f"\n{admin_text}"
+
+    if _get_supervised_departments(user.id):
+        urgent_text = "🚨 /urgent — термінові завдання" if lang == "uk" else "🚨 /urgent — urgent tasks" if lang == "en" else "🚨 /urgent — urgente"
+        text += f"\n{urgent_text}"
     
     await _reply(update, text, parse_mode="Markdown")
 
@@ -1380,6 +1605,7 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         [_btn(get_message("tasks_easy_btn", lang), callback_data="tasks_easy")],
         [_btn(get_message("tasks_medium_btn", lang), callback_data="tasks_medium")],
         [_btn(get_message("tasks_hard_btn", lang), callback_data="tasks_hard")],
+        [_btn(get_message("tasks_urgent_btn", lang), callback_data="tasks_urgent")],
         [_btn(get_message("back_btn", lang), callback_data="go_back")],
     ])
     
@@ -1387,6 +1613,34 @@ async def cmd_tasks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         get_message("tasks_select_difficulty", lang),
         reply_markup=markup,
         parse_mode="Markdown")
+
+
+def _get_supervised_departments(user_id: int) -> list[int]:
+    if user_id in ADMIN_IDS:
+        return [d["id"] for d in get_departments()]
+    roles = get_user_all_dept_roles(user_id)
+    return sorted([dept_id for dept_id, role in roles.items() if role == "supervisor"])
+
+
+@rate_limit_user
+async def cmd_urgent(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    register_user(user)
+    lang = get_user_language(user.id)
+
+    supervised_depts = _get_supervised_departments(user.id)
+    if not supervised_depts:
+        await _reply(update, get_message("urgent_admin_only", lang))
+        return
+
+    ctx.user_data["urgent_depts"] = supervised_depts
+    markup = InlineKeyboardMarkup([
+        [_btn(get_message("urgent_admin_add_btn", lang), callback_data="u:add")],
+        [_btn(get_message("urgent_admin_manage_btn", lang), callback_data="u:manage")],
+        [_btn(get_message("back_btn", lang), callback_data="go_back")],
+    ])
+
+    await _reply(update, get_message("urgent_admin_header", lang), reply_markup=markup, parse_mode="Markdown")
 
 
 async def handle_task_dept_select(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1412,6 +1666,7 @@ async def handle_task_dept_select(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         [_btn(get_message("tasks_easy_btn", lang), callback_data="tasks_easy")],
         [_btn(get_message("tasks_medium_btn", lang), callback_data="tasks_medium")],
         [_btn(get_message("tasks_hard_btn", lang), callback_data="tasks_hard")],
+        [_btn(get_message("tasks_urgent_btn", lang), callback_data="tasks_urgent")],
         [_btn(get_message("back_btn", lang), callback_data="go_back")],
     ])
     
@@ -1437,8 +1692,9 @@ async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "tasks_easy": "easy",
         "tasks_medium": "medium",
         "tasks_hard": "hard",
+        "tasks_urgent": "urgent",
     }
-    
+
     difficulty = difficulty_map.get(data)
     if not difficulty:
         return
@@ -1454,7 +1710,11 @@ async def handle_tasks_category(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     # Reset pagination for this difficulty
     ctx.user_data[f"tasks_page_{difficulty}"] = 0
-    
+
+    if difficulty == "urgent":
+        await display_urgent_tasks_page(update, ctx)
+        return
+
     # Show paginated tasks
     await display_tasks_page(update, ctx, difficulty)
 
@@ -1588,6 +1848,87 @@ async def display_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE, dif
         await _reply(update, "⬇️", reply_markup=markup)
 
 
+async def display_urgent_tasks_page(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Display urgent tasks for selected department."""
+    if update.callback_query:
+        user = update.callback_query.from_user
+    else:
+        user = update.effective_user
+
+    lang = get_user_language(user.id)
+    user_depts = get_user_departments(user.id)
+    if not user_depts:
+        await _reply(update, get_message("dept_required", lang))
+        return
+
+    user_dept_id = ctx.user_data.get("selected_task_dept", user_depts[0])
+    urgent_tasks = list_urgent_tasks_by_department(user_dept_id)
+
+    if not urgent_tasks:
+        markup = InlineKeyboardMarkup([
+            [_btn(get_message("tasks_easy_btn", lang), callback_data="tasks_easy")],
+            [_btn(get_message("tasks_medium_btn", lang), callback_data="tasks_medium")],
+            [_btn(get_message("tasks_hard_btn", lang), callback_data="tasks_hard")],
+            [_btn(get_message("tasks_urgent_btn", lang), callback_data="tasks_urgent")],
+            [_btn(get_message("back_btn", lang), callback_data="go_back")],
+        ])
+        await _reply(update, get_message("urgent_tasks_none", lang), reply_markup=markup, parse_mode="Markdown")
+        return
+
+    header = get_message("urgent_tasks_header", lang)
+    await _reply(update, header, parse_mode="Markdown")
+
+    for task in urgent_tasks:
+        assignments = get_urgent_task_assignments(task["id"])
+        active_assignments = [a for a in assignments if a.get("status") in ("reserved", "submitted", "approved")]
+        active_count = len(active_assignments)
+        remaining = max(task["required_slots"] - active_count, 0)
+
+        assignee_names = [
+            _display_name(a) for a in active_assignments if a.get("user_id")
+        ]
+        assignees_line = ", ".join(assignee_names) if assignee_names else "-"
+
+        status_line = (
+            get_message("urgent_task_in_progress", lang)
+            if active_count >= task["required_slots"]
+            else get_message("urgent_task_slots", lang, count=remaining)
+        )
+
+        deadline_line = ""
+        if task.get("deadline_at"):
+            deadline_line = f"\n⏰ {get_message('urgent_task_deadline', lang)}: {task['deadline_at']}"
+
+        text = (
+            f"🚨 *{task['title']}*\n"
+            f"{task.get('description', '')}\n"
+            f"💎 {task['xp_reward']} XP\n"
+            f"👥 {get_message('urgent_task_assignees', lang)}: {assignees_line}\n"
+            f"{status_line}"
+            f"{deadline_line}"
+        )
+
+        assignment = get_urgent_task_assignment(task["id"], user.id)
+        btn = None
+        if assignment and assignment.get("status") in ("reserved", "submitted", "approved"):
+            if assignment["status"] == "reserved":
+                btn = _btn(get_message("urgent_task_submit_btn", lang), callback_data=f"urgent_submit_{task['id']}")
+            elif assignment["status"] == "submitted":
+                btn = _btn(get_message("urgent_task_submitted_btn", lang), callback_data="noop")
+            else:
+                btn = _btn(get_message("urgent_task_done_btn", lang), callback_data="noop")
+        elif remaining > 0:
+            btn = _btn(get_message("urgent_task_reserve_btn", lang), callback_data=f"urgent_reserve_{task['id']}")
+        else:
+            btn = _btn(get_message("urgent_task_in_progress_btn", lang), callback_data="noop")
+
+        markup = InlineKeyboardMarkup([[btn]]) if btn else None
+        await _reply(update, text, reply_markup=markup, parse_mode="Markdown")
+
+    markup = InlineKeyboardMarkup([[_btn(get_message("back_btn", lang), callback_data="go_back")]])
+    await _reply(update, "⬇️", reply_markup=markup)
+
+
 async def handle_tasks_page_next(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Handle next page button for tasks - only update navigation message."""
     query = update.callback_query
@@ -1646,8 +1987,10 @@ async def cmd_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     lang = get_user_language(user.id)
     had_submission = bool(ctx.user_data.pop("submitting_task_id", None))
     had_wizard = bool(ctx.user_data.pop("admin_wizard", None))
+    had_review = bool(ctx.user_data.pop("awaiting_review_comment", None))
+    had_review = bool(ctx.user_data.pop("pending_review_result", None)) or had_review
 
-    if had_submission or had_wizard:
+    if had_submission or had_wizard or had_review:
         await _reply(update, get_message("cancel_success", lang))
     else:
         await _reply(update, get_message("cancel_no_action", lang))
@@ -1716,6 +2059,12 @@ async def cmd_addtask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     task_id = add_task(title, description, xp)
+    sent_count = await _notify_all_new_task(ctx.bot, title, description)
+    log_event("task_push_sent", admin_id=user.id, data={
+        "task_id": task_id,
+        "department_id": None,
+        "sent_count": sent_count,
+    })
     await _reply(update, get_message("task_added", lang, task_id=task_id, title=title, xp=xp))
 
 
@@ -2301,6 +2650,39 @@ def _render_ideas_page(page: int, user_id: int, role: str) -> tuple[str, InlineK
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 
+def _render_urgent_manage_menu(dept_id: int) -> tuple[str, InlineKeyboardMarkup]:
+    tasks = list_urgent_tasks_by_department(dept_id)
+    dept = get_department(dept_id)
+    dept_name = f"{dept['emoji']} {get_dept_name_translated(dept_id, 'uk')}" if dept else "Невідомий департамент"
+
+    lines = [f"🚨 *Термінові завдання* — {dept_name}", ""]
+    rows = []
+
+    if not tasks:
+        lines.append("Немає термінових завдань.")
+    else:
+        for task in tasks:
+            lines.append(f"#{task['id']} — {task['title']} ({task['required_slots']} ос.)")
+            rows.append([
+                _btn("👥 Призначити", callback_data=f"u:assign:{task['id']}") ,
+                _btn("🔁 Змінити", callback_data=f"u:replace:{task['id']}") ,
+            ])
+
+    rows.append([_btn("⬅ Назад", callback_data="u:back")])
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
+async def _start_urgent_task_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, dept_id: int):
+    chat_id = update.effective_chat.id
+    ctx.user_data["admin_wizard"] = {
+        "type": "urgent_task",
+        "step": "title",
+        "payload": {"department": dept_id},
+        "bot_prompt_ids": [],
+    }
+    await _wizard_prompt(ctx, chat_id, "🚨 Введи *назву* термінового завдання:")
+
+
 async def _start_edit_task_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, task_id: int, field: str, page: int, dept_filter: str | None, difficulty: str | None):
     """Start wizard for editing a specific task field."""
     chat_id = update.effective_chat.id
@@ -2359,6 +2741,7 @@ async def _start_edit_task_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE
 
 async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wizard_type: str):
     chat_id = update.effective_chat.id
+    lang = get_user_language(update.effective_user.id)
     if wizard_type.startswith("add_task"):
         ctx.user_data["admin_wizard"] = {
             "type": "add_task",
@@ -2439,6 +2822,34 @@ async def _start_admin_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, wi
             f"✍️ Введи новий текст для *{meta['label']}*.\n\n"
             "Можна кілька абзаців. Щоб скасувати — /cancel",
         )
+        return
+
+    if wizard_type == "push_broadcast":
+        ctx.user_data["admin_wizard"] = {
+            "type": "push_broadcast",
+            "step": "target",
+            "payload": {},
+            "bot_prompt_ids": [],
+        }
+
+        departments = get_departments()
+        rows = [
+            [_btn(get_message("admin_push_target_all_btn", lang), callback_data="wizard_push_all")],
+            [_btn(get_message("admin_push_target_user_btn", lang), callback_data="wizard_push_user")],
+        ]
+
+        for dept in departments:
+            dept_name = get_dept_name_translated(dept["id"], lang)
+            rows.append([_btn(f"{dept['emoji']} {dept_name}", callback_data=f"wizard_push_dept_{dept['id']}")])
+
+        msg = await ctx.bot.send_message(
+            chat_id=chat_id,
+            text=_normalize_text(get_message("admin_push_select_target", lang)),
+            reply_markup=InlineKeyboardMarkup(rows),
+            parse_mode="Markdown",
+        )
+        ctx.user_data["admin_wizard"]["bot_prompt_ids"].append(msg.message_id)
+        return
 
 
 @admin_only
@@ -2465,6 +2876,11 @@ async def _handle_admin_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         if not dept_id and "admin_dept_id" in ctx.user_data:
             dept_id = ctx.user_data["admin_dept_id"]
         await _edit_message_text(query, get_message("admin_panel_header", lang), reply_markup=_admin_menu_markup(lang, dept_id), parse_mode="Markdown")
+        return
+
+    if data == "a:push":
+        await _start_admin_wizard(update, ctx, "push_broadcast")
+        await _query_answer(query, "Пуш-розсилка")
         return
 
     if data.startswith("a:review_tasks:"):
@@ -3051,57 +3467,40 @@ async def handle_wizard_callbacks(update: Update, ctx: ContextTypes.DEFAULT_TYPE
         msg = await ctx.bot.send_message(chat_id, "⚡ *Крок 2: Вибери складність:*", reply_markup=markup, parse_mode="Markdown")
         wizard["bot_prompt_ids"].append(msg.message_id)
         return
-    
-    # Handle notification choice in add_task wizard
-    if data.startswith("wizard_notify_"):
-        if wizard["type"] != "add_task" or wizard["step"] != "notify":
+
+    # Handle target selection in push broadcast wizard
+    if data.startswith("wizard_push_"):
+        if wizard["type"] != "push_broadcast" or wizard["step"] != "target":
             return
-        
-        should_notify = data == "wizard_notify_yes"
-        user_id = query.from_user.id
-        
-        # Create the task
-        task_id = add_task(
-            wizard["payload"]["title"],
-            wizard["payload"].get("description", ""),
-            wizard["payload"]["xp"],
-            difficulty_level=wizard["payload"].get("difficulty", "easy"),
-            department_id=wizard["payload"].get("department"),
-        )
-        
-        # Send notification if requested
-        sent_count = 0
-        if should_notify and wizard["payload"].get("department"):
-            sent_count = await _notify_department_new_task(
-                ctx.bot,
-                wizard["payload"]["department"],
-                wizard["payload"]["title"],
-                wizard["payload"].get("description", "")
-            )
-        
-        await _cleanup_wizard_prompts(ctx, chat_id)
-        _clear_wizard(ctx)
-        
-        dept_text = ""
-        if wizard["payload"].get("department"):
-            dept = get_department(wizard["payload"]["department"])
-            if dept:
-                dept_name = get_dept_name_translated(wizard["payload"]["department"], "uk")
-                dept_text = f"\n🏢 Департамент: {dept_name}"
-        
-        notify_text = f"\n📢 Повідомлень надіслано: {sent_count}" if should_notify else ""
-        
-        result_msg = (
-            "✅ *Завдання додано*\n\n"
-            f"ID: `{task_id}`\n"
-            f"Назва: {wizard['payload']['title']}\n"
-            f"Опис: {wizard['payload'].get('description', '-')}\n"
-            f"Складність: {wizard['payload'].get('difficulty', 'easy')}\n"
-            f"XP: {wizard['payload']['xp']}{dept_text}{notify_text}"
-        )
-        
-        await ctx.bot.send_message(chat_id=user_id, text=result_msg, parse_mode="Markdown")
-        return
+
+        lang = get_user_language(query.from_user.id)
+
+        if data == "wizard_push_all":
+            wizard["payload"]["target"] = "all"
+            wizard["step"] = "message"
+            await _cleanup_wizard_prompts(ctx, chat_id)
+            await _wizard_prompt(ctx, chat_id, get_message("admin_push_prompt_text", lang))
+            return
+
+        if data == "wizard_push_user":
+            wizard["payload"]["target"] = "user"
+            wizard["step"] = "user_id"
+            await _cleanup_wizard_prompts(ctx, chat_id)
+            await _wizard_prompt(ctx, chat_id, get_message("admin_push_prompt_user_id", lang))
+            return
+
+        if data.startswith("wizard_push_dept_"):
+            try:
+                dept_id = int(data.split("_")[-1])
+            except (ValueError, IndexError):
+                return
+
+            wizard["payload"]["target"] = "dept"
+            wizard["payload"]["dept_id"] = dept_id
+            wizard["step"] = "message"
+            await _cleanup_wizard_prompts(ctx, chat_id)
+            await _wizard_prompt(ctx, chat_id, get_message("admin_push_prompt_text", lang))
+            return
     
     # Handle difficulty selection for edit_task
     if data.startswith("wizard_edit_difficulty_"):
@@ -3268,6 +3667,80 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await go_back(update, ctx)
         return
 
+    if data.startswith("u:"):
+        user_id = query.from_user.id
+        lang = get_user_language(user_id)
+        supervised_depts = ctx.user_data.get("urgent_depts") or _get_supervised_departments(user_id)
+
+        if data in ("u:add", "u:manage"):
+            if not supervised_depts:
+                await _query_answer(query, get_message("urgent_admin_only", lang), show_alert=True)
+                return
+
+            if len(supervised_depts) == 1:
+                dept_id = supervised_depts[0]
+                if data == "u:add":
+                    await _start_urgent_task_wizard(update, ctx, dept_id)
+                else:
+                    text, markup = _render_urgent_manage_menu(dept_id)
+                    await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+                return
+
+            # Show department selection
+            rows = []
+            for dept in get_departments():
+                if dept["id"] in supervised_depts:
+                    dept_name = get_dept_name_translated(dept["id"], lang)
+                    rows.append([_btn(f"{dept['emoji']} {dept_name}", callback_data=f"u:dept:{data}:{dept['id']}")])
+            rows.append([_btn(get_message("back_btn", lang), callback_data="u:back")])
+            await _edit_message_text(
+                query,
+                get_message("urgent_admin_select_dept", lang),
+                reply_markup=InlineKeyboardMarkup(rows),
+                parse_mode="Markdown",
+            )
+            return
+
+        if data == "u:back":
+            await cmd_urgent(update, ctx)
+            return
+
+        if data.startswith("u:dept:"):
+            parts = data.split(":")
+            action = parts[2]
+            dept_id = int(parts[3])
+            if action == "u:add":
+                await _start_urgent_task_wizard(update, ctx, dept_id)
+                return
+            if action == "u:manage":
+                text, markup = _render_urgent_manage_menu(dept_id)
+                await _edit_message_text(query, text=text, reply_markup=markup, parse_mode="Markdown")
+                return
+
+        if data.startswith("u:assign:"):
+            task_id = int(data.split(":")[2])
+            ctx.user_data["admin_wizard"] = {
+                "type": "urgent_assign",
+                "step": "user_id",
+                "payload": {"task_id": task_id},
+                "bot_prompt_ids": [],
+            }
+            await _query_answer(query)
+            await _wizard_prompt(ctx, query.from_user.id, "👤 Введи user_id(и) через кому для призначення:")
+            return
+
+        if data.startswith("u:replace:"):
+            task_id = int(data.split(":")[2])
+            ctx.user_data["admin_wizard"] = {
+                "type": "urgent_replace",
+                "step": "replace",
+                "payload": {"task_id": task_id},
+                "bot_prompt_ids": [],
+            }
+            await _query_answer(query)
+            await _wizard_prompt(ctx, query.from_user.id, "🔁 Введи старий user_id і новий user_id через пробіл:")
+            return
+
     # Handle change departments button (legacy, from menu)
     if data == "change_depts":
         user_id = query.from_user.id
@@ -3342,6 +3815,154 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if data.startswith("urgent_reserve_"):
+        task_id = int(data.split("_", 2)[2])
+        user = query.from_user
+        register_user(user)
+
+        urgent_task = get_urgent_task(task_id)
+        if not urgent_task or not urgent_task.get("is_active"):
+            await _query_answer(query, "❌ Завдання не знайдено", show_alert=True)
+            return
+
+        user_depts = get_user_departments(user.id)
+        if urgent_task["department_id"] not in user_depts:
+            await _query_answer(query, "❌ Це завдання не з твого департаменту", show_alert=True)
+            return
+
+        existing = get_urgent_task_assignment(task_id, user.id)
+        if existing and existing.get("status") in ("reserved", "submitted", "approved"):
+            await _query_answer(query, "⚠️ Ти вже забронював це завдання", show_alert=True)
+            return
+
+        active_count = count_urgent_task_active_assignments(task_id)
+        if active_count >= urgent_task["required_slots"]:
+            await _query_answer(query, "⏳ Всі місця вже зайняті", show_alert=True)
+            return
+
+        add_urgent_task_assignment(task_id, user.id, assigned_by=None)
+        active_count = count_urgent_task_active_assignments(task_id)
+        if active_count >= urgent_task["required_slots"]:
+            update_urgent_task_status(task_id, "in_progress")
+        log_event("urgent_task_reserved", user_id=user.id, data={
+            "urgent_task_id": task_id,
+            "department_id": urgent_task["department_id"],
+        })
+
+        await _query_answer(query, "✅ Завдання заброньовано!", show_alert=True)
+        await display_urgent_tasks_page(update, ctx)
+        return
+
+    if data.startswith("urgent_submit_"):
+        task_id = int(data.split("_", 2)[2])
+        user = query.from_user
+        urgent_task = get_urgent_task(task_id)
+        assignment = get_urgent_task_assignment(task_id, user.id)
+        if not urgent_task or not assignment or assignment.get("status") != "reserved":
+            await _query_answer(query, "❌ Нема активного бронювання", show_alert=True)
+            return
+
+        ctx.user_data["submitting_urgent_task_id"] = task_id
+        lang = get_user_language(user.id)
+        push_nav(ctx, "tasks")
+        markup = InlineKeyboardMarkup([[_btn(get_message("cancel_btn", lang), callback_data="go_back")]])
+        await query.message.reply_text(
+            get_message("urgent_task_submit_prompt", lang, title=urgent_task["title"]),
+            reply_markup=markup,
+            parse_mode="Markdown",
+        )
+        return
+
+    if data.startswith("urgent_approve_") or data.startswith("urgent_reject_"):
+        action, assignment_id_str = data.split("_", 2)[1:3]
+        assignment_id = int(assignment_id_str)
+        assignment = get_urgent_assignment_by_id(assignment_id)
+        if not assignment:
+            await _query_answer(query, "❌ Заявку не знайдено.", show_alert=True)
+            return
+
+        dept_id = assignment["department_id"]
+        is_admin = query.from_user.id in ADMIN_IDS
+        is_supervisor = get_user_dept_role(query.from_user.id, dept_id) == "supervisor"
+        if not is_admin and not is_supervisor:
+            await _query_answer(query, "❌ Недостатньо прав.", show_alert=True)
+            return
+
+        if assignment.get("status") != "submitted":
+            await _query_answer(query, "⚠️ Вже оброблено.", show_alert=True)
+            return
+
+        new_status = "approved" if action == "approve" else "rejected"
+        review_urgent_assignment(assignment_id, new_status, query.from_user.id, review_comment=None)
+
+        log_event("urgent_task_reviewed", user_id=assignment["user_id"], admin_id=query.from_user.id, data={
+            "assignment_id": assignment_id,
+            "urgent_task_id": assignment["urgent_task_id"],
+            "status": new_status,
+        })
+
+        if new_status == "approved":
+            xp_success = atomic_award_xp(
+                user_id=assignment["user_id"],
+                amount=assignment["xp_reward"],
+                task_id=assignment["urgent_task_id"],
+                dept_id=dept_id,
+            )
+            if not xp_success:
+                await _query_answer(query, "❌ Помилка нарахування XP", show_alert=True)
+                return
+
+        approved_count = count_urgent_task_approved_assignments(assignment["urgent_task_id"])
+        if approved_count >= assignment["required_slots"]:
+            update_urgent_task_status(assignment["urgent_task_id"], "completed", is_active=0)
+
+        ctx.user_data["pending_review_result"] = {
+            "submission_id": assignment_id,
+            "user_id": assignment["user_id"],
+            "task_title": assignment["task_title"],
+            "xp_reward": assignment["xp_reward"],
+            "status": new_status,
+            "is_urgent": True,
+        }
+
+        comment_markup = InlineKeyboardMarkup([
+            [_btn("💬 Залишити коментар", callback_data=f"urgent_comment_yes_{assignment_id}")],
+            [_btn("⏭ Без коментаря", callback_data=f"urgent_comment_no_{assignment_id}")],
+        ])
+
+        await ctx.bot.send_message(
+            chat_id=query.from_user.id,
+            text=_normalize_text("Хочеш додати коментар до результату?"),
+            reply_markup=comment_markup,
+        )
+        return
+
+    if data.startswith("urgent_comment_yes_") or data.startswith("urgent_comment_no_"):
+        assignment_id = int(data.split("_")[-1])
+        pending = ctx.user_data.get("pending_review_result")
+        if not pending or pending.get("submission_id") != assignment_id:
+            await _query_answer(query, "⚠️ Сесія коментаря завершена.", show_alert=True)
+            return
+
+        if data.startswith("urgent_comment_yes_"):
+            ctx.user_data["awaiting_review_comment"] = pending
+            ctx.user_data.pop("pending_review_result", None)
+            await _query_answer(query)
+            await ctx.bot.send_message(
+                chat_id=query.from_user.id,
+                text=_normalize_text("✍️ Напиши коментар для користувача:"),
+            )
+            return
+
+        ctx.user_data.pop("pending_review_result", None)
+        await _query_answer(query)
+        log_event("urgent_review_comment_skipped", user_id=pending["user_id"], admin_id=query.from_user.id, data={
+            "assignment_id": assignment_id,
+            "task_title": pending["task_title"][:50],
+        })
+        await _send_review_result(ctx, pending, comment_text=None)
+        return
+
     if data.startswith("approve_") or data.startswith("reject_"):
         if query.from_user.id not in ADMIN_IDS:
             await _query_answer(query, "❌ Тільки для адмінів!", show_alert=True)
@@ -3410,12 +4031,6 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             })
             
             result_icon = "✅ Схвалено"
-            user_msg = (
-                f"🎉 *Завдання підтверджено!*\n\n"
-                f"✅ «{task['title']}» — зараховано!\n"
-                f"💎 +{task['xp_reward']} XP нараховано!\n\n"
-                f"Переглянь профіль: /xp"
-            )
         else:
             # 📊 Log task rejection event
             log_event('task_rejected', user_id=sub["user_id"], admin_id=query.from_user.id, data={
@@ -3425,106 +4040,211 @@ async def on_button(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             })
             
             result_icon = "❌ Відхилено"
-            user_lang = get_user_language(sub["user_id"])
-            user_msg = (
-                f"❌ *Завдання не прийнято*\n\n"
-                f"«{task['title']}» — відхилено.\n"
-                f"{get_message('error_submission_failed', user_lang)}"
+
+        submitter = get_user(sub["user_id"]) or query.from_user
+        admin_text = _format_admin_submission_text(sub_id, submitter, task, sub.get("proof_text") or "")
+        updated_admin_text = f"{admin_text}\n\n{result_icon} адміном {admin_tag}"
+        await _update_submission_notifications(ctx, sub_id, updated_admin_text)
+
+        ctx.user_data["pending_review_result"] = {
+            "submission_id": sub_id,
+            "user_id": sub["user_id"],
+            "task_title": task["title"],
+            "xp_reward": task["xp_reward"],
+            "status": new_status,
+        }
+
+        comment_markup = InlineKeyboardMarkup([
+            [_btn("💬 Залишити коментар", callback_data=f"review_comment_yes_{sub_id}")],
+            [_btn("⏭ Без коментаря", callback_data=f"review_comment_no_{sub_id}")],
+        ])
+
+        await ctx.bot.send_message(
+            chat_id=query.from_user.id,
+            text=_normalize_text("Хочеш додати коментар до результату?"),
+            reply_markup=comment_markup,
+        )
+        return
+
+    if data.startswith("review_comment_yes_") or data.startswith("review_comment_no_"):
+        if query.from_user.id not in ADMIN_IDS:
+            await _query_answer(query, "❌ Тільки для адмінів!", show_alert=True)
+            return
+
+        sub_id = int(data.split("_")[-1])
+        pending = ctx.user_data.get("pending_review_result")
+        if not pending or pending.get("submission_id") != sub_id:
+            await _query_answer(query, "⚠️ Сесія коментаря завершена.", show_alert=True)
+            return
+
+        if data.startswith("review_comment_yes_"):
+            ctx.user_data["awaiting_review_comment"] = pending
+            ctx.user_data.pop("pending_review_result", None)
+            await _query_answer(query)
+            await ctx.bot.send_message(
+                chat_id=query.from_user.id,
+                text=_normalize_text("✍️ Напиши коментар для користувача:"),
             )
+            return
 
-        try:
-            await ctx.bot.send_message(sub["user_id"], _normalize_text(user_msg), parse_mode="Markdown")
-        except Exception:
-            pass
-
-        suffix = f"\n\n{result_icon} адміном {admin_tag}"
-        try:
-            if query.message.caption:
-                await _edit_message_caption(query, 
-                    caption=query.message.caption + suffix,
-                    parse_mode="Markdown",
-                    reply_markup=None,
-                )
-            else:
-                await _edit_message_text(query, 
-                    text=query.message.text + suffix,
-                    parse_mode="Markdown",
-                    reply_markup=None,
-                )
-        except Exception:
-            pass
+        # No comment chosen
+        ctx.user_data.pop("pending_review_result", None)
+        await _query_answer(query)
+        log_event("review_comment_skipped", user_id=pending["user_id"], admin_id=query.from_user.id, data={
+            "submission_id": pending["submission_id"],
+            "task_title": pending["task_title"][:50],
+        })
+        await _send_review_result(ctx, pending, comment_text=None)
+        return
 
 
-async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+async def _process_proof_payload(
+    update: Update | None,
+    ctx: ContextTypes.DEFAULT_TYPE,
+    user,
+    proof_text: str,
+    proof_file_ids: list[str] | None,
+):
+    urgent_task_id = ctx.user_data.get("submitting_urgent_task_id")
+    if urgent_task_id:
+        urgent_task = get_urgent_task(urgent_task_id)
+        assignment = get_urgent_task_assignment(urgent_task_id, user.id)
+        if not urgent_task or not assignment or assignment.get("status") != "reserved":
+            lang = get_user_language(user.id)
+            await _send_user_message(ctx.bot, update, user.id, get_message("urgent_task_no_reservation", lang))
+            ctx.user_data.pop("submitting_urgent_task_id", None)
+            return
+
+        proof_file_ids = proof_file_ids or []
+        if not proof_text and not proof_file_ids:
+            lang = get_user_language(user.id)
+            await _send_user_message(ctx.bot, update, user.id, get_message("no_proof", lang))
+            return
+
+        update_urgent_assignment_submission(assignment["id"], proof_text, proof_file_ids)
+        ctx.user_data.pop("submitting_urgent_task_id", None)
+
+        log_event("urgent_task_submitted", user_id=user.id, data={
+            "urgent_task_id": urgent_task_id,
+            "assignment_id": assignment["id"],
+        })
+
+        await _send_user_message(
+            ctx.bot,
+            update,
+            user.id,
+            get_message("urgent_task_submitted", get_user_language(user.id), title=urgent_task["title"]),
+            parse_mode="Markdown",
+        )
+
+        reviewers = set(ADMIN_IDS) | set(get_dept_supervisors(urgent_task["department_id"]))
+        submitter_tag = f"@{user.username}" if user.username else user.first_name
+        review_text = (
+            f"🚨 *Термінове завдання на перевірку*\n\n"
+            f"👤 Від: {submitter_tag} (ID: `{user.id}`)\n"
+            f"📌 Завдання: *{urgent_task['title']}*\n"
+            f"💎 XP: *{urgent_task['xp_reward']}*"
+        )
+        if proof_text:
+            review_text += f"\n💬 Текст:\n{proof_text[:300]}"
+
+        markup = InlineKeyboardMarkup(
+            [[
+                _btn("✅ Схвалити", callback_data=f"urgent_approve_{assignment['id']}"),
+                _btn("❌ Відхилити", callback_data=f"urgent_reject_{assignment['id']}"),
+            ]]
+        )
+
+        for reviewer_id in reviewers:
+            try:
+                if proof_file_ids and len(proof_file_ids) > 1:
+                    media = [
+                        InputMediaPhoto(
+                            media=proof_file_ids[0],
+                            caption=_normalize_text(review_text),
+                            parse_mode="Markdown",
+                        )
+                    ]
+                    media.extend([InputMediaPhoto(media=file_id) for file_id in proof_file_ids[1:]])
+                    await ctx.bot.send_media_group(reviewer_id, media=media)
+                    await ctx.bot.send_message(
+                        reviewer_id,
+                        _normalize_text(f"Оберіть дію для термінового #{assignment['id']}"),
+                        reply_markup=markup,
+                        parse_mode="Markdown",
+                    )
+                elif proof_file_ids:
+                    await ctx.bot.send_photo(
+                        reviewer_id,
+                        photo=proof_file_ids[0],
+                        caption=_normalize_text(review_text),
+                        reply_markup=markup,
+                        parse_mode="Markdown",
+                    )
+                else:
+                    await ctx.bot.send_message(
+                        reviewer_id,
+                        _normalize_text(review_text),
+                        reply_markup=markup,
+                        parse_mode="Markdown",
+                    )
+            except Exception as exc:
+                logger.error("Не вдалося надіслати супервізору %s: %s", reviewer_id, exc)
+        return
+
     task_id = ctx.user_data.get("submitting_task_id")
     if not task_id:
         return
 
-    user = update.effective_user
     task = get_task(task_id)
 
     if not task:
         lang = get_user_language(user.id)
-        await _reply(update, get_message("task_not_found", lang))
+        await _send_user_message(ctx.bot, update, user.id, get_message("task_not_found", lang))
         ctx.user_data.pop("submitting_task_id", None)
         return
 
-    proof_text = update.message.text or update.message.caption or ""
-    proof_file_id = None
-
-    if update.message.photo:
-        proof_file_id = update.message.photo[-1].file_id
-    elif update.message.document:
-        proof_file_id = update.message.document.file_id
-
-    if not proof_text and not proof_file_id:
+    proof_file_ids = proof_file_ids or []
+    if not proof_text and not proof_file_ids:
         lang = get_user_language(user.id)
-        await _reply(update, get_message("no_proof", lang))
+        await _send_user_message(ctx.bot, update, user.id, get_message("no_proof", lang))
         return
 
-    # Update user's username in case they changed it (without registering)
     update_user_username(user.id, user.username, user.first_name)
-    
-    sub_id = add_submission(user.id, task_id, proof_text, proof_file_id)
-    
-    # Update task execution history to mark as submitted
+
+    sub_id = add_submission(
+        user.id,
+        task_id,
+        proof_text,
+        proof_file_ids=proof_file_ids,
+    )
+
     update_task_execution_by_task(
         user.id,
         task_id,
         status="submitted",
         submission_id=sub_id,
-        result_notes=f"Proof submitted: {len(proof_text)} chars, file={bool(proof_file_id)}"
+        result_notes=f"Proof submitted: {len(proof_text)} chars, files={len(proof_file_ids)}",
     )
-    
+
     ctx.user_data.pop("submitting_task_id", None)
-    
-    # 📊 Log task submission event
-    log_event('task_submitted', user_id=user.id, data={
-        'task_id': task_id,
-        'submission_id': sub_id,
-        'difficulty': task.get('difficulty_level', 'unknown') if task else 'unknown',
-        'title': task.get('title', '')[:50] if task else ''
+
+    log_event("task_submitted", user_id=user.id, data={
+        "task_id": task_id,
+        "submission_id": sub_id,
+        "difficulty": task.get("difficulty_level", "unknown") if task else "unknown",
+        "title": task.get("title", "")[:50] if task else "",
     })
 
-    await _reply(
+    await _send_user_message(
+        ctx.bot,
         update,
-        (
-            f"✅ *Здано на перевірку!*\n\n"
-            f"«{task['title']}» — адмін перевірить найближчим часом. ⏳"
-        ),
+        user.id,
+        f"✅ *Здано на перевірку!*\n\n«{task['title']}» — адмін перевірить найближчим часом. ⏳",
         parse_mode="Markdown",
     )
 
-    user_tag = f"@{user.username}" if user.username else user.first_name
-    admin_text = (
-        f"🔔 *Нова заявка #{sub_id}*\n\n"
-        f"👤 Від: {user_tag} (ID: `{user.id}`)\n"
-        f"📌 Завдання: *{task['title']}*\n"
-        f"💎 XP: *{task['xp_reward']}*"
-    )
-    if proof_text:
-        admin_text += f"\n💬 Текст:\n{proof_text[:300]}"
-
+    admin_text = _format_admin_submission_text(sub_id, user, task, proof_text)
     markup = InlineKeyboardMarkup(
         [[
             _btn("✅ Схвалити", callback_data=f"approve_{sub_id}"),
@@ -3534,23 +4254,55 @@ async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     for admin_id in ADMIN_IDS:
         try:
-            if proof_file_id and update.message.photo:
-                await ctx.bot.send_photo(
+            if proof_file_ids and len(proof_file_ids) > 1:
+                media = [
+                    InputMediaPhoto(
+                        media=proof_file_ids[0],
+                        caption=_normalize_text(admin_text),
+                        parse_mode="Markdown",
+                    )
+                ]
+                media.extend([InputMediaPhoto(media=file_id) for file_id in proof_file_ids[1:]])
+                await ctx.bot.send_media_group(admin_id, media=media)
+                action_msg = await ctx.bot.send_message(
                     admin_id,
-                    photo=proof_file_id,
+                    _normalize_text(f"Оберіть дію для заявки #{sub_id}"),
+                    reply_markup=markup,
+                    parse_mode="Markdown",
+                )
+                add_submission_notification(sub_id, admin_id, action_msg.message_id, "text")
+            elif proof_file_ids and len(proof_file_ids) == 1:
+                msg = await ctx.bot.send_photo(
+                    admin_id,
+                    photo=proof_file_ids[0],
                     caption=_normalize_text(admin_text),
                     reply_markup=markup,
                     parse_mode="Markdown",
                 )
+                add_submission_notification(sub_id, admin_id, msg.message_id, "photo")
             else:
-                await ctx.bot.send_message(
+                msg = await ctx.bot.send_message(
                     admin_id,
                     _normalize_text(admin_text),
                     reply_markup=markup,
                     parse_mode="Markdown",
                 )
+                add_submission_notification(sub_id, admin_id, msg.message_id, "text")
         except Exception as exc:
             logger.error("Не вдалося надіслати адміну %s: %s", admin_id, exc)
+
+
+async def _process_proof(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    proof_text = update.message.text or update.message.caption or ""
+    proof_file_ids: list[str] = []
+
+    if update.message.photo:
+        proof_file_ids = [update.message.photo[-1].file_id]
+    elif update.message.document:
+        proof_file_ids = [update.message.document.file_id]
+
+    await _process_proof_payload(update, ctx, user, proof_text, proof_file_ids)
 
 
 @rate_limit_user
@@ -3559,6 +4311,30 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     logger.info(f"📝 Text input from {user.id}: waiting_for_support={ctx.user_data.get('waiting_for_support')}, submitting_idea={ctx.user_data.get('submitting_idea')}, submitting_task_id={ctx.user_data.get('submitting_task_id')}")
+
+    if ctx.user_data.get("awaiting_review_comment") and user and user.id in ADMIN_IDS:
+        pending = ctx.user_data.pop("awaiting_review_comment", None)
+        comment_text = (update.message.text or "").strip()
+        if not comment_text:
+            await _reply(update, "❌ Коментар не може бути порожнім.")
+            ctx.user_data["awaiting_review_comment"] = pending
+            return
+
+        if pending.get("is_urgent"):
+            update_urgent_assignment_comment(pending["submission_id"], comment_text)
+            log_event("urgent_review_comment_added", user_id=pending["user_id"], admin_id=user.id, data={
+                "assignment_id": pending["submission_id"],
+                "task_title": pending["task_title"][:50],
+            })
+        else:
+            update_submission_comment(pending["submission_id"], comment_text)
+            log_event("review_comment_added", user_id=pending["user_id"], admin_id=user.id, data={
+                "submission_id": pending["submission_id"],
+                "task_title": pending["task_title"][:50],
+            })
+        await _send_review_result(ctx, pending, comment_text=comment_text)
+        await _reply(update, "✅ Коментар надіслано користувачу.")
+        return
     
     # Check if user is submitting task proof (text-based)
     if ctx.user_data.get("submitting_task_id"):
@@ -3658,22 +4434,58 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     await _wizard_prompt(ctx, chat_id, get_message("error_xp_must_be_number", lang))
                     return
 
-                # Store XP and ask about notifications
                 wizard["payload"]["xp"] = xp
-                wizard["step"] = "notify"
-                
-                await _cleanup_wizard_prompts(ctx, chat_id)
-                markup = InlineKeyboardMarkup([
-                    [_btn("✅ Так, повідомити", callback_data="wizard_notify_yes")],
-                    [_btn("❌ Ні, без повідомлень", callback_data="wizard_notify_no")],
-                ])
-                msg = await ctx.bot.send_message(
-                    chat_id,
-                    "📢 *Крок 6: Розсилати повідомлення про нове завдання користувачам дельці?*",
-                    reply_markup=markup,
-                    parse_mode="Markdown"
+
+                task_id = add_task(
+                    wizard["payload"]["title"],
+                    wizard["payload"].get("description", ""),
+                    wizard["payload"]["xp"],
+                    difficulty_level=wizard["payload"].get("difficulty", "easy"),
+                    department_id=wizard["payload"].get("department"),
                 )
-                wizard["bot_prompt_ids"].append(msg.message_id)
+
+                sent_count = 0
+                if wizard["payload"].get("department"):
+                    sent_count = await _notify_department_new_task(
+                        ctx.bot,
+                        wizard["payload"]["department"],
+                        wizard["payload"]["title"],
+                        wizard["payload"].get("description", ""),
+                    )
+                else:
+                    sent_count = await _notify_all_new_task(
+                        ctx.bot,
+                        wizard["payload"]["title"],
+                        wizard["payload"].get("description", ""),
+                    )
+
+                log_event("task_push_sent", admin_id=user.id, data={
+                    "task_id": task_id,
+                    "department_id": wizard["payload"].get("department"),
+                    "sent_count": sent_count,
+                })
+
+                await _cleanup_wizard_prompts(ctx, chat_id)
+                _clear_wizard(ctx)
+
+                dept_text = ""
+                if wizard["payload"].get("department"):
+                    dept = get_department(wizard["payload"]["department"])
+                    if dept:
+                        dept_name = get_dept_name_translated(wizard["payload"]["department"], "uk")
+                        dept_text = f"\n🏢 Департамент: {dept_name}"
+
+                result_msg = (
+                    "✅ *Завдання додано*\n\n"
+                    f"ID: `{task_id}`\n"
+                    f"Назва: {wizard['payload']['title']}\n"
+                    f"Опис: {wizard['payload'].get('description', '-')}\n"
+                    f"Складність: {wizard['payload'].get('difficulty', 'easy')}\n"
+                    f"XP: {wizard['payload']['xp']}{dept_text}\n"
+                    f"📢 Повідомлень надіслано: {sent_count}"
+                )
+
+                await _reply(update, result_msg, parse_mode="Markdown")
                 return
 
         if wizard["type"] == "give_xp":
@@ -3723,6 +4535,261 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 wizard["payload"]["name"] = text
                 wizard["step"] = "description"
                 await _wizard_prompt(ctx, chat_id, "📄 Введи *опис* товару:")
+                return
+
+        if wizard["type"] == "push_broadcast":
+            if wizard["step"] == "user_id":
+                try:
+                    target_uid = int(text)
+                except ValueError:
+                    await _wizard_prompt(ctx, chat_id, get_message("error_user_id_must_be_number", lang))
+                    return
+
+                target_user = get_user_summary(target_uid)
+                if not target_user:
+                    await _wizard_prompt(ctx, chat_id, "❌ Користувача не знайдено. Введи інший user_id:")
+                    return
+
+                wizard["payload"]["user_id"] = target_uid
+                wizard["step"] = "message"
+                await _wizard_prompt(ctx, chat_id, get_message("admin_push_prompt_text", "uk"))
+                return
+
+            if wizard["step"] == "message":
+                if not text:
+                    await _wizard_prompt(ctx, chat_id, "❌ Текст не може бути порожнім. Введи повідомлення:")
+                    return
+
+                target = wizard["payload"].get("target")
+                dept_id = wizard["payload"].get("dept_id")
+                target_uid = wizard["payload"].get("user_id")
+
+                sent_count = await _send_admin_push(
+                    ctx.bot,
+                    target=target,
+                    text=text,
+                    dept_id=dept_id,
+                    user_id=target_uid,
+                )
+
+                log_event("admin_push_sent", admin_id=user.id, data={
+                    "target": target,
+                    "department_id": dept_id,
+                    "target_user_id": target_uid,
+                    "sent_count": sent_count,
+                })
+
+                await _cleanup_wizard_prompts(ctx, chat_id)
+                _clear_wizard(ctx)
+                await _reply(update, get_message("admin_push_sent", lang, count=sent_count), parse_mode="Markdown")
+                return
+
+        if wizard["type"] == "urgent_task":
+            if wizard["step"] == "title":
+                if not text:
+                    await _wizard_prompt(ctx, chat_id, "❌ Назва не може бути порожньою. Введи назву:")
+                    return
+                wizard["payload"]["title"] = text
+                wizard["step"] = "description"
+                await _wizard_prompt(ctx, chat_id, "📝 Введи *опис* термінового завдання:")
+                return
+
+            if wizard["step"] == "description":
+                wizard["payload"]["description"] = text
+                wizard["step"] = "xp"
+                await _wizard_prompt(ctx, chat_id, "💎 Введи *XP* (ціле число > 0):")
+                return
+
+            if wizard["step"] == "xp":
+                try:
+                    xp = int(text)
+                    if xp <= 0:
+                        raise ValueError
+                except ValueError:
+                    await _wizard_prompt(ctx, chat_id, get_message("error_xp_must_be_number", lang))
+                    return
+                wizard["payload"]["xp"] = xp
+                wizard["step"] = "slots"
+                await _wizard_prompt(ctx, chat_id, "👥 Введи кількість людей для цього завдання:")
+                return
+
+            if wizard["step"] == "slots":
+                try:
+                    slots = int(text)
+                    if slots <= 0:
+                        raise ValueError
+                except ValueError:
+                    await _wizard_prompt(ctx, chat_id, "❌ Кількість має бути числом > 0:")
+                    return
+                wizard["payload"]["slots"] = slots
+                wizard["step"] = "deadline"
+                await _wizard_prompt(ctx, chat_id, "⏰ Введи дедлайн (YYYY-MM-DD HH:MM) або '.' щоб пропустити:")
+                return
+
+            if wizard["step"] == "deadline":
+                deadline_at = None if text.strip() == "." else text.strip()
+                payload = wizard["payload"]
+
+                urgent_id = add_urgent_task(
+                    payload["title"],
+                    payload.get("description", ""),
+                    payload["xp"],
+                    payload["department"],
+                    payload["slots"],
+                    deadline_at,
+                    user.id,
+                )
+
+                sent_count = await _notify_department_new_urgent_task(
+                    ctx.bot,
+                    payload["department"],
+                    payload["title"],
+                    payload.get("description", ""),
+                    payload["xp"],
+                    payload["slots"],
+                    deadline_at,
+                )
+
+                log_event("urgent_task_created", admin_id=user.id, data={
+                    "urgent_task_id": urgent_id,
+                    "department_id": payload["department"],
+                    "slots": payload["slots"],
+                    "deadline_at": deadline_at,
+                    "sent_count": sent_count,
+                })
+
+                await _cleanup_wizard_prompts(ctx, chat_id)
+                _clear_wizard(ctx)
+                await _reply(update, get_message("urgent_admin_created", lang, task_id=urgent_id, count=sent_count), parse_mode="Markdown")
+                return
+
+        if wizard["type"] == "urgent_assign":
+            if wizard["step"] == "user_id":
+                task_id = wizard["payload"]["task_id"]
+                urgent_task = get_urgent_task(task_id)
+                if not urgent_task:
+                    await _reply(update, "❌ Завдання не знайдено")
+                    _clear_wizard(ctx)
+                    return
+
+                raw_ids = [item.strip() for item in text.split(",") if item.strip()]
+                user_ids = []
+                for item in raw_ids:
+                    try:
+                        user_ids.append(int(item))
+                    except ValueError:
+                        continue
+
+                if not user_ids:
+                    await _wizard_prompt(ctx, chat_id, "❌ Введи хоча б один коректний user_id:")
+                    return
+
+                active_count = count_urgent_task_active_assignments(task_id)
+                slots_left = max(urgent_task["required_slots"] - active_count, 0)
+                assigned_count = 0
+
+                for target_uid in user_ids:
+                    if slots_left <= 0:
+                        break
+                    if urgent_task["department_id"] not in get_user_departments(target_uid):
+                        continue
+                    existing = get_urgent_task_assignment(task_id, target_uid)
+                    if existing and existing.get("status") in ("reserved", "submitted", "approved"):
+                        continue
+                    add_urgent_task_assignment(task_id, target_uid, assigned_by=user.id)
+                    slots_left -= 1
+                    assigned_count += 1
+                    try:
+                        await ctx.bot.send_message(
+                            chat_id=target_uid,
+                            text=_normalize_text(get_message("urgent_assigned_user", lang, title=urgent_task["title"]))
+                        )
+                    except Exception:
+                        pass
+
+                active_count = count_urgent_task_active_assignments(task_id)
+                if active_count >= urgent_task["required_slots"]:
+                    update_urgent_task_status(task_id, "in_progress")
+
+                log_event("urgent_task_assigned", admin_id=user.id, data={
+                    "urgent_task_id": task_id,
+                    "assigned_count": assigned_count,
+                })
+
+                await _cleanup_wizard_prompts(ctx, chat_id)
+                _clear_wizard(ctx)
+                await _reply(update, get_message("urgent_admin_assigned", lang, count=assigned_count), parse_mode="Markdown")
+                return
+
+        if wizard["type"] == "urgent_replace":
+            if wizard["step"] == "replace":
+                task_id = wizard["payload"]["task_id"]
+                urgent_task = get_urgent_task(task_id)
+                if not urgent_task:
+                    await _reply(update, "❌ Завдання не знайдено")
+                    _clear_wizard(ctx)
+                    return
+
+                parts = text.split()
+                if len(parts) != 2:
+                    await _wizard_prompt(ctx, chat_id, "❌ Введи старий user_id і новий user_id через пробіл:")
+                    return
+
+                try:
+                    old_uid = int(parts[0])
+                    new_uid = int(parts[1])
+                except ValueError:
+                    await _wizard_prompt(ctx, chat_id, "❌ user_id має бути числом. Спробуй ще раз:")
+                    return
+
+                old_assignment = get_urgent_task_assignment(task_id, old_uid)
+                if not old_assignment or old_assignment.get("status") not in ("reserved", "submitted"):
+                    await _reply(update, "❌ Старий користувач не забронював це завдання")
+                    _clear_wizard(ctx)
+                    return
+
+                if urgent_task["department_id"] not in get_user_departments(new_uid):
+                    await _reply(update, "❌ Новий користувач не в цьому департаменті")
+                    _clear_wizard(ctx)
+                    return
+
+                new_assignment = get_urgent_task_assignment(task_id, new_uid)
+                if new_assignment and new_assignment.get("status") in ("reserved", "submitted", "approved"):
+                    await _reply(update, "❌ Новий користувач вже забронював завдання")
+                    _clear_wizard(ctx)
+                    return
+
+                review_urgent_assignment(old_assignment["id"], "rejected", user.id, review_comment="Reassigned")
+                add_urgent_task_assignment(task_id, new_uid, assigned_by=user.id)
+
+                active_count = count_urgent_task_active_assignments(task_id)
+                if active_count >= urgent_task["required_slots"]:
+                    update_urgent_task_status(task_id, "in_progress")
+
+                try:
+                    await ctx.bot.send_message(
+                        chat_id=old_uid,
+                        text=_normalize_text(get_message("urgent_reassigned_old", lang, title=urgent_task["title"]))
+                    )
+                except Exception:
+                    pass
+                try:
+                    await ctx.bot.send_message(
+                        chat_id=new_uid,
+                        text=_normalize_text(get_message("urgent_reassigned_new", lang, title=urgent_task["title"]))
+                    )
+                except Exception:
+                    pass
+
+                log_event("urgent_task_reassigned", admin_id=user.id, data={
+                    "urgent_task_id": task_id,
+                    "old_user_id": old_uid,
+                    "new_user_id": new_uid,
+                })
+
+                await _cleanup_wizard_prompts(ctx, chat_id)
+                _clear_wizard(ctx)
+                await _reply(update, get_message("urgent_admin_reassigned", lang), parse_mode="Markdown")
                 return
 
             if wizard["step"] == "description":
@@ -3880,6 +4947,38 @@ async def handle_text_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 @rate_limit_user
 async def handle_proof_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    message = update.effective_message
+    if message and message.media_group_id and message.photo:
+        group_id = message.media_group_id
+        media_groups = ctx.user_data.setdefault("media_groups", {})
+        group = media_groups.get(group_id)
+        if not group:
+            group = {
+                "file_ids": [],
+                "text": "",
+                "job": None,
+                "user": update.effective_user,
+            }
+            media_groups[group_id] = group
+
+        if message.caption and not group["text"]:
+            group["text"] = message.caption
+        group["file_ids"].append(message.photo[-1].file_id)
+
+        if group.get("job"):
+            try:
+                group["job"].schedule_removal()
+            except Exception:
+                pass
+
+        if ctx.application.job_queue:
+            group["job"] = ctx.application.job_queue.run_once(
+                _process_media_group_job,
+                when=1.0,
+                data={"user_id": update.effective_user.id, "group_id": group_id},
+            )
+        return
+
     await _process_proof(update, ctx)
 
 
@@ -3966,6 +5065,114 @@ async def _notify_department_new_task(bot, dept_id: int, task_title: str, task_d
         return 0
 
 
+async def _notify_all_new_task(bot, task_title: str, task_desc: str):
+    """Send notification to all users about a new global task."""
+    try:
+        users = list_all_users()
+        sent_count = 0
+        failed_count = 0
+        msg_text = (
+            "📢 *Нове завдання для всіх!*\n\n"
+            f"📌 *{task_title}*\n"
+            f"{task_desc}\n\n"
+            "Перевір нове завдання в /tasks"
+        )
+
+        for user in users:
+            if user.get("is_banned"):
+                continue
+            try:
+                await bot.send_message(
+                    chat_id=user["user_id"],
+                    text=msg_text,
+                    parse_mode="Markdown",
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to notify user {user['user_id']}: {e}")
+                failed_count += 1
+
+        logger.info(f"📢 Global notifications sent: {sent_count}/{len(users)}")
+        return sent_count
+    except Exception as e:
+        logger.error(f"Error notifying all users: {e}")
+        return 0
+
+
+async def _notify_department_new_urgent_task(
+    bot,
+    dept_id: int,
+    task_title: str,
+    task_desc: str,
+    xp_reward: int,
+    required_slots: int,
+    deadline_at: str | None,
+):
+    try:
+        users = get_users_in_department(dept_id)
+        sent_count = 0
+        dept = get_department(dept_id)
+        dept_name = get_dept_name_translated(dept_id, "uk") if dept else f"Dept#{dept_id}"
+        emoji = dept["emoji"] if dept else "🚨"
+        deadline_line = f"\n⏰ Дедлайн: {deadline_at}" if deadline_at else ""
+
+        msg_text = (
+            f"{emoji} *Нове термінове завдання!*\n\n"
+            f"📌 *{task_title}*\n"
+            f"{task_desc}\n"
+            f"💎 XP: *{xp_reward}*\n"
+            f"👥 Потрібно людей: *{required_slots}*"
+            f"{deadline_line}\n\n"
+            f"Перевір /tasks → Термінові ( {dept_name} )"
+        )
+
+        for user in users:
+            if user.get("is_banned"):
+                continue
+            try:
+                await bot.send_message(
+                    chat_id=user["user_id"],
+                    text=msg_text,
+                    parse_mode="Markdown",
+                )
+                sent_count += 1
+            except Exception as e:
+                logger.warning(f"Failed to notify user {user['user_id']}: {e}")
+
+        logger.info(f"📢 Urgent notifications sent: {sent_count}/{len(users)} users in {dept_name}")
+        return sent_count
+    except Exception as e:
+        logger.error(f"Error notifying department {dept_id} urgent task: {e}")
+        return 0
+
+
+async def _send_admin_push(bot, target: str, text: str, dept_id: int | None = None, user_id: int | None = None):
+    recipients = []
+    if target == "all":
+        recipients = list_all_users()
+    elif target == "dept" and dept_id:
+        recipients = get_users_in_department(dept_id)
+    elif target == "user" and user_id:
+        user = get_user(user_id)
+        recipients = [user] if user else []
+
+    sent_count = 0
+    for user in recipients:
+        if not user or user.get("is_banned"):
+            continue
+        try:
+            await bot.send_message(
+                chat_id=user["user_id"],
+                text=_normalize_text(text),
+                parse_mode="Markdown",
+            )
+            sent_count += 1
+        except Exception as exc:
+            logger.warning(f"Failed to send push to {user.get('user_id')}: {exc}")
+
+    return sent_count
+
+
 def main():
     import sys
     import asyncio
@@ -3992,6 +5199,10 @@ def main():
     
     # Add error handler to catch all errors
     app.add_error_handler(handle_error)
+
+    # Global user action logging (non-blocking)
+    app.add_handler(MessageHandler(filters.ALL, log_user_message_update), group=-1, block=False)
+    app.add_handler(CallbackQueryHandler(log_user_callback_update), group=-1, block=False)
     
     # Product commands
     app.add_handler(CommandHandler("addproduct", cmd_addproduct))
@@ -4010,6 +5221,7 @@ def main():
     app.add_handler(CommandHandler("info", cmd_info))
     app.add_handler(CommandHandler("settings", cmd_settings))
     app.add_handler(CommandHandler("tasks", cmd_tasks))
+    app.add_handler(CommandHandler("urgent", cmd_urgent))
     app.add_handler(CommandHandler("xp", cmd_xp))
     app.add_handler(CommandHandler("leaderboard", cmd_leaderboard))
     app.add_handler(CommandHandler("cancel", cmd_cancel))
@@ -4045,7 +5257,7 @@ def main():
     app.add_handler(CallbackQueryHandler(handle_task_dept_select, pattern="^task_dept_select_"))
     
     # Task category selection (easy/medium/hard)
-    app.add_handler(CallbackQueryHandler(handle_tasks_category, pattern="^tasks_(easy|medium|hard)$"))
+    app.add_handler(CallbackQueryHandler(handle_tasks_category, pattern="^tasks_(easy|medium|hard|urgent)$"))
     
     app.add_handler(CallbackQueryHandler(handle_idea_anonymity_choice, pattern="^idea_(named|anon)$"))
     

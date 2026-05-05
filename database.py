@@ -1349,6 +1349,57 @@ def add_submission(user_id, task_id, proof_text, proof_file_id=None, proof_file_
     conn.commit()
     conn.close()
     return sub_id
+    conn = get_conn()
+    c = conn.cursor()
+    
+    updates = []
+    params = []
+    
+    if title is not None:
+        updates.append("title=?")
+        params.append(title)
+    if description is not None:
+        updates.append("description=?")
+        params.append(description)
+    if xp_reward is not None:
+        updates.append("xp_reward=?")
+        params.append(xp_reward)
+    if difficulty_level is not None:
+        updates.append("difficulty_level=?")
+        params.append(difficulty_level)
+    if department_id is not None:
+        updates.append("department_id=?")
+        params.append(department_id)
+    
+    if not updates:
+        conn.close()
+        return
+    
+    params.append(task_id)
+    query = f"UPDATE tasks SET {', '.join(updates)} WHERE id=?"
+    c.execute(query, params)
+    conn.commit()
+    conn.close()
+
+
+# ============ SUBMISSIONS ----------
+
+def add_submission(user_id, task_id, proof_text, proof_file_id=None, proof_file_ids=None):
+    conn = get_conn()
+    c = conn.cursor()
+    proof_ids_json = json.dumps(proof_file_ids) if proof_file_ids else None
+    primary_file_id = proof_file_id
+    if not primary_file_id and proof_file_ids:
+        primary_file_id = proof_file_ids[0]
+    c.execute("""
+        INSERT INTO submissions
+            (user_id, task_id, proof_text, proof_file_id, proof_file_ids, status, submitted_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?)
+    """, (user_id, task_id, proof_text, primary_file_id, proof_ids_json, datetime.now().isoformat()))
+    sub_id = c.lastrowid
+    conn.commit()
+    conn.close()
+    return sub_id
 
 
 def get_submission(submission_id):

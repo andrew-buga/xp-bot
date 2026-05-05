@@ -2649,7 +2649,6 @@ def _render_ideas_page(page: int, user_id: int, role: str) -> tuple[str, InlineK
     
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
-
 def _render_urgent_manage_menu(dept_id: int) -> tuple[str, InlineKeyboardMarkup]:
     tasks = list_urgent_tasks_by_department(dept_id)
     dept = get_department(dept_id)
@@ -2681,7 +2680,6 @@ async def _start_urgent_task_wizard(update: Update, ctx: ContextTypes.DEFAULT_TY
         "bot_prompt_ids": [],
     }
     await _wizard_prompt(ctx, chat_id, "🚨 Введи *назву* термінового завдання:")
-
 
 async def _start_edit_task_wizard(update: Update, ctx: ContextTypes.DEFAULT_TYPE, task_id: int, field: str, page: int, dept_filter: str | None, difficulty: str | None):
     """Start wizard for editing a specific task field."""
@@ -3501,6 +3499,54 @@ async def handle_wizard_callbacks(update: Update, ctx: ContextTypes.DEFAULT_TYPE
             await _cleanup_wizard_prompts(ctx, chat_id)
             await _wizard_prompt(ctx, chat_id, get_message("admin_push_prompt_text", lang))
             return
+    
+    # Handle difficulty selection for edit_task
+    if data.startswith("wizard_edit_difficulty_"):
+        parts = data.split("_")
+        difficulty = parts[4]  # easy, medium, hard
+        task_id = int(parts[5])
+        _page = int(parts[6]) if len(parts) > 6 else 0
+        _dept_filter = parts[7] if len(parts) > 7 else None
+        _difficulty_filter = parts[8] if len(parts) > 8 else None
+        
+        update_task(task_id, difficulty_level=difficulty)
+        
+        await _cleanup_wizard_prompts(ctx, chat_id)
+        _clear_wizard(ctx)
+
+        await ctx.bot.send_message(
+            chat_id=query.from_user.id,
+            text=f"✅ Складність завдання #{task_id} оновлена на {difficulty}!",
+            parse_mode="Markdown"
+        )
+        return
+
+    if data.startswith("wizard_edit_department_"):
+        parts = data.split("_")
+        new_dept_id = int(parts[4])
+        task_id = int(parts[5])
+        _page = int(parts[6]) if len(parts) > 6 else 0
+        _dept_filter = parts[7] if len(parts) > 7 else None
+        _difficulty = parts[8] if len(parts) > 8 else None
+        
+        update_task(task_id, department_id=new_dept_id)
+        
+        await _cleanup_wizard_prompts(ctx, chat_id)
+        _clear_wizard(ctx)
+        
+        # Get new department name
+        dept = get_department(new_dept_id)
+        if dept:
+            dept_name = get_dept_name_translated(new_dept_id, "uk")
+        else:
+            dept_name = "N/A"
+        
+        await ctx.bot.send_message(
+            chat_id=query.from_user.id,
+            text=f"✅ Завдання #{task_id} переведено до департаменту \"{dept_name}\"!",
+            parse_mode="Markdown"
+        )
+        return
     
     # Handle difficulty selection for edit_task
     if data.startswith("wizard_edit_difficulty_"):
